@@ -1,0 +1,295 @@
+{% extends "index.html" %}
+
+{% block content %}
+<div class="container my-3">
+
+  <!-- Top bar -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="d-flex align-items-center gap-2">
+      <a href="{{ url_for('data_dashboard') }}" class="btn-back">&larr; Back to Dashboard</a>
+      <h5 class="mb-0" style="color:#004B87; font-weight:700;">Campaign Analysis</h5>
+    </div>
+    <form method="post" class="mb-0">
+      <input type="hidden" name="update_data" value="1">
+      <button type="submit" class="btn btn-primary btn-sm">Update Data</button>
+    </form>
+  </div>
+  <div class="text-end mb-2">
+    <small class="text-muted" style="font-size:0.75rem;">Last Updated: {{ last_updated }}</small>
+  </div>
+
+  {% if refreshed %}
+    <div class="alert alert-success py-2 px-3 mb-3">Data updated successfully.</div>
+  {% endif %}
+
+  <!-- Filters -->
+  <form id="filtersForm" method="post" class="row g-3">
+
+    <!-- Branch (multi) -->
+    <div class="col-12 col-lg-6">
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <label class="form-label mb-0">Branch(es)</label>
+        <button type="button" class="btn btn-outline-secondary btn-sm"
+                data-bs-toggle="modal" data-bs-target="#branchModal">
+          Edit
+        </button>
+      </div>
+      <div id="chips-branch" class="chips-container"></div>
+      <div class="text-muted small mt-1">Select branches to view data.</div>
+
+      <select id="branch" name="branch" class="d-none" multiple>
+        {% for b in branch_choices %}
+          <option value="{{ b }}"
+            {% if branches_selected is defined and b in branches_selected %}selected{% endif %}>
+            {{ b }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Day (single) -->
+    <div class="col-12 col-lg-6">
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <label class="form-label mb-0">Day</label>
+        <button type="button" class="btn btn-outline-secondary btn-sm"
+                data-bs-toggle="modal" data-bs-target="#dayModal">
+          Edit
+        </button>
+      </div>
+      <div id="chips-day" class="chips-container"></div>
+      <div class="text-muted small mt-1">Select a single day.</div>
+
+      <select id="day" name="day" class="d-none">
+        <option value="">All Days</option>
+        {% for d in range(1, 32) %}
+          <option value="{{ d }}"
+            {% if selected_day is defined and d|string == selected_day|string %}selected{% endif %}>
+            {{ d }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="col-12 d-flex justify-content-end">
+      <button type="submit" class="btn btn-primary px-4">Apply Filters</button>
+    </div>
+  </form>
+
+  <!-- Current selections -->
+  <div class="row mt-3">
+    <div class="col-12">
+      <div class="alert alert-light border d-flex gap-4 mb-0">
+        <div><strong>Branch:</strong> {{ selected_branches_display if selected_branches_display else 'None' }}</div>
+        <div><strong>Day:</strong> {{ selected_day if selected_day else 'All' }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="row g-4 mt-1">
+    {% set graphs = [
+      ('RV 3 Year', graph_rv),
+      ('RV 3 Year (Deal Closed Date)', graph_rv1),
+      ('Conversion', graph_conv),
+      ('Deals', graph_deal),
+      ('Deals (Deal Closed Date)', graph_deal1),
+      ('Appointment to Deal closed', graph_deal_rate),
+      ('Appointment Rate', graph_app_rate),
+      ('Appointments', graph_app),
+      ('Leads', graph_lead),
+      ('Attempt Rate', graph_attempt_rate),
+      ('NIB Rate', graph_nib_rate),
+      ('Not Interested Rate', graph_ni_rate),
+      ('Bad Disposition Rate', graph_bad_dispo_rate)
+    ] %}
+
+    {% for title, graph in graphs %}
+    <div class="col-12">
+      <div class="card">
+        <div class="card-body">
+          <h6 class="mb-2">{{ title }}</h6>
+          {{ graph|safe if graph is defined else '' }}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<!-- Branch Modal -->
+<div class="modal fade" id="branchModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title">Select Branches</h6>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="search-wrap">
+          <input id="search-branch-list" class="form-control form-control-sm mb-2" placeholder="Search branch...">
+        </div>
+        <div class="d-flex gap-2 mb-2">
+          <button class="btn btn-primary btn-sm" type="button" id="btn-select-all-branch">Select All</button>
+          <button class="btn btn-outline-danger btn-sm" type="button" id="btn-clear-branch">Clear All</button>
+        </div>
+        <div id="list-branch" class="list-group list-scroll">
+          {% for b in branch_choices %}
+            <button type="button" class="list-group-item list-group-item-action" data-value="{{ b }}">
+              {{ b }}
+            </button>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary btn-sm" data-bs-dismiss="modal">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Day Modal -->
+<div class="modal fade" id="dayModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-scrollable modal-md">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title">Select Day</h6>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="search-wrap">
+          <input id="search-day-list" class="form-control form-control-sm mb-2" placeholder="Search day...">
+        </div>
+        <div id="list-day" class="list-group list-scroll">
+            <button type="button" class="list-group-item list-group-item-action" data-value="">All Days</button>
+          {% for d in range(1, 32) %}
+            <button type="button" class="list-group-item list-group-item-action" data-value="{{ d }}">
+              {{ d }}
+            </button>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary btn-sm" data-bs-dismiss="modal">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+  // ---------- Helpers ----------
+  const getSel = id => [...document.getElementById(id).options].filter(o => o.selected).map(o => o.value);
+
+  const setSel = (id, vals) => {
+    const s = new Set(vals.map(String));
+    [...document.getElementById(id).options].forEach(o => o.selected = s.has(o.value));
+    updateListVisuals(id);
+  };
+
+  function updateListVisuals(id) {
+    const selectedValues = new Set(getSel(id));
+    document.querySelectorAll(`#list-${id} [data-value]`).forEach(item => {
+      item.classList.toggle('active', selectedValues.has(item.dataset.value));
+    });
+  }
+
+  // ---------- Chips Rendering ----------
+  function renderChipsMulti(selectId, chipsId) {
+    const box = document.getElementById(chipsId);
+    box.innerHTML = '';
+    const sel = getSel(selectId);
+
+    if (!sel.length) {
+      box.innerHTML = '<span class="text-muted small">None Selected</span>';
+      return;
+    }
+
+    sel.forEach(v => {
+      const c = document.createElement('span');
+      c.className = 'chip';
+      c.innerHTML = `<span>${v}</span><button type="button" class="chip-close">&times;</button>`;
+      c.querySelector('button').onclick = (e) => {
+        e.stopPropagation();
+        setSel(selectId, getSel(selectId).filter(x => x !== v));
+        renderChipsMulti(selectId, chipsId);
+      };
+      box.appendChild(c);
+    });
+  }
+
+  function renderChipSingle(selectId, chipsId) {
+    const box = document.getElementById(chipsId);
+    const v = getSel(selectId)[0];
+    box.innerHTML = '';
+    if (v && v !== "") {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.innerHTML = `<span>Day: ${v}</span><button type="button" class="chip-close">&times;</button>`;
+      chip.querySelector('button').onclick = () => {
+        setSel(selectId, [""]);
+        renderChipSingle(selectId, chipsId);
+      };
+      box.appendChild(chip);
+    } else {
+      box.innerHTML = '<span class="text-muted small">All Days</span>';
+    }
+  }
+
+  // ---------- Init ----------
+  document.addEventListener('DOMContentLoaded', () => {
+    updateListVisuals('branch');
+    updateListVisuals('day');
+    renderChipsMulti('branch', 'chips-branch');
+    renderChipSingle('day', 'chips-day');
+
+    // Branch Multi-Select
+    document.getElementById('list-branch').onclick = e => {
+      const btn = e.target.closest('[data-value]');
+      if (!btn) return;
+      const val = btn.dataset.value;
+      const cur = new Set(getSel('branch'));
+      cur.has(val) ? cur.delete(val) : cur.add(val);
+      setSel('branch', [...cur]);
+      renderChipsMulti('branch', 'chips-branch');
+    };
+
+    // Day Single-Select
+    document.getElementById('list-day').onclick = e => {
+      const btn = e.target.closest('[data-value]');
+      if (!btn) return;
+      setSel('day', [btn.dataset.value]);
+      renderChipSingle('day', 'chips-day');
+    };
+
+    // Select All / Clear
+    document.getElementById('btn-select-all-branch').onclick = () => {
+      const all = [...document.getElementById('branch').options].map(o => o.value);
+      setSel('branch', all);
+      renderChipsMulti('branch', 'chips-branch');
+    };
+
+    document.getElementById('btn-clear-branch').onclick = () => {
+      setSel('branch', []);
+      renderChipsMulti('branch', 'chips-branch');
+    };
+
+    // Search
+    document.getElementById('search-branch-list').oninput = e => {
+      const q = e.target.value.toLowerCase();
+      document.querySelectorAll('#list-branch [data-value]').forEach(b =>
+        b.style.display = b.textContent.toLowerCase().includes(q) ? '' : 'none'
+      );
+    };
+
+    document.getElementById('search-day-list').oninput = e => {
+      const q = e.target.value;
+      document.querySelectorAll('#list-day [data-value]').forEach(b =>
+        b.style.display = b.textContent.includes(q) ? '' : 'none'
+      );
+    };
+  });
+</script>
+{% endblock %}

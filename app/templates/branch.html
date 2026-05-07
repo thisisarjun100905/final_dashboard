@@ -1,0 +1,313 @@
+{% extends "index.html" %}
+
+{% block content %}
+<div class="container my-3">
+
+  <!-- Top bar -->
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="d-flex align-items-center gap-2">
+      <a href="{{ url_for('data_dashboard') }}" class="btn-back">&larr; Back to Dashboard</a>
+      <h5 class="mb-0" style="color:#004B87; font-weight:700;">Branch Analysis</h5>
+    </div>
+    <form method="post" class="mb-0">
+      <input type="hidden" name="update_data" value="1">
+      <button type="submit" class="btn btn-primary btn-sm">Update Data</button>
+    </form>
+  </div>
+  <div class="text-end mb-2">
+    <small class="text-muted" style="font-size:0.75rem;">Last Updated: {{ last_updated }}</small>
+  </div>
+
+  {% if refreshed %}
+    <div class="alert alert-success py-2 px-3 mb-3">Data updated successfully.</div>
+  {% endif %}
+
+  <!-- Filters -->
+  <form id="filtersForm" method="post" class="row g-3">
+
+    <!-- Campaigns (multi) -->
+    <div class="col-12 col-lg-6">
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <label class="form-label mb-0">Campaign(s)</label>
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#campaignModal">
+          Edit
+        </button>
+      </div>
+      <div id="chips-campaign_id" class="chips-container"></div>
+      <div class="text-muted small mt-1">Select campaigns to view data.</div>
+
+      <select id="campaign_id" name="campaign_id" class="d-none" multiple>
+        {% for c in campaign_choices %}
+          <option value="{{ c }}"
+            {% if campaigns_selected is defined and (c in campaigns_selected or (c|string) in campaigns_selected) %}selected{% endif %}
+          >{{ c }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <!-- Day (single) -->
+    <div class="col-12 col-lg-6">
+      <div class="d-flex justify-content-between align-items-center mb-1">
+        <label class="form-label mb-0">Day</label>
+        <button type="button" class="btn btn-outline-secondary btn-sm" data-bs-toggle="modal" data-bs-target="#dayModal">
+          Edit
+        </button>
+      </div>
+      <div id="chips-day" class="chips-container"></div>
+      <div class="text-muted small mt-1">Select a single day (1-31).</div>
+
+      <select id="day" name="day" class="d-none">
+        {% for d in range(1, 32) %}
+          <option value="{{ d }}" {% if selected_day is defined and d == selected_day %}selected{% endif %}>{{ d }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div class="col-12 d-flex justify-content-end">
+      <button type="submit" class="btn btn-primary px-4">Apply Filters</button>
+    </div>
+  </form>
+
+  <!-- Current selections -->
+  <div class="row mt-3">
+    <div class="col-12">
+      <div class="alert alert-light border d-flex flex-wrap gap-3 mb-0">
+        <div><strong>Campaigns:</strong>
+          {% if campaigns_selected and campaigns_selected|length > 0 %}
+            {{ campaigns_selected|join(', ') }}
+          {% else %}
+            None
+          {% endif %}
+        </div>
+        <div><strong>Day:</strong> {{ selected_day }}</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cards: table (Pan-India) above each chart -->
+  <div class="row g-4 mt-1">
+
+    {% set sections = [
+      ('RV 3 Year', table_rv, graph_rv),
+      ('RV 3 Year (Deal Closed Date)', table_rv1, graph_rv1),
+      ('Conversion', table_conv, graph_conv),
+      ('Deals', table_deal, graph_deal),
+      ('Deals (Deal Closed Date)', table_deal1, graph_deal1),
+      ('Appointment to Deal closed', table_deal_rate, graph_deal_rate),
+      ('Appointment Rate', table_app_rate, graph_app_rate),
+      ('Appointments', table_app, graph_app),
+      ('Leads', table_lead, graph_lead),
+      ('Attempt Rate', table_attempt_rate, graph_attempt_rate),
+      ('Connectivity Rate', table_conn_rate, graph_conn_rate),
+      ('NIB Rate', table_nib_rate, graph_nib_rate),
+      ('Not Interested Rate', table_ni_rate, graph_ni_rate),
+      ('Bad Disposition Rate', table_bad_dispo_rate, graph_bad_dispo_rate),
+      ('Call Scheduling Rate', table_call_scheduling_rate, graph_call_scheduling_rate)
+    ] %}
+
+    {% for title, tbl, graph in sections %}
+    <div class="col-12">
+      <div class="card">
+        <div class="card-body">
+          <h6 class="mb-2">{{ title }} &mdash; Pan-India Summary</h6>
+          <div class="table-responsive small mb-3">
+            {{ tbl|safe }}
+          </div>
+          {{ graph|safe }}
+        </div>
+      </div>
+    </div>
+    {% endfor %}
+
+  </div>
+
+</div>
+
+<!-- Campaign Modal -->
+<div class="modal fade" id="campaignModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title">Select Campaigns</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="search-wrap">
+          <input type="text" class="form-control form-control-sm mb-2" id="search-campaign-list" placeholder="Search campaigns...">
+        </div>
+        <div class="d-flex gap-2 mb-2">
+          <button class="btn btn-primary btn-sm" type="button" data-selectall="campaign_id">Select All</button>
+          <button class="btn btn-outline-danger btn-sm" type="button" data-clearall="campaign_id">Clear All</button>
+        </div>
+        <div id="list-campaign_id" class="list-group list-scroll">
+          {% for c in campaign_choices %}
+            <button type="button" class="list-group-item list-group-item-action" data-value="{{ c }}">{{ c }}</button>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary btn-sm" data-bs-dismiss="modal">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Day Modal (single-select) -->
+<div class="modal fade" id="dayModal" tabindex="-1">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title">Select Day</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="search-wrap">
+          <input type="text" class="form-control form-control-sm mb-2" id="search-day-list" placeholder="Search day...">
+        </div>
+        <div id="list-day" class="list-group list-scroll">
+          {% for d in range(1, 32) %}
+            <button type="button" class="list-group-item list-group-item-action" data-value="{{ d }}">{{ d }}</button>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-primary btn-sm" data-bs-dismiss="modal">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+  // ----- Utilities for hidden selects -----
+  function getSelectedValues(selectId) {
+    return Array.from(document.getElementById(selectId).options)
+      .filter(o => o.selected).map(o => o.value);
+  }
+  function setSelectedValues(selectId, values) {
+    const set = new Set(values.map(String));
+    Array.from(document.getElementById(selectId).options)
+      .forEach(o => { o.selected = set.has(o.value); });
+  }
+  function setSingleValue(selectId, value) {
+    Array.from(document.getElementById(selectId).options)
+      .forEach(o => { o.selected = (o.value === String(value)); });
+  }
+  function getSingleValue(selectId) {
+    const opt = Array.from(document.getElementById(selectId).options).find(o => o.selected);
+    return opt ? opt.value : null;
+  }
+
+  // ----- Chips renderers -----
+  function renderChipsMulti(selectId, chipsId) {
+    const box = document.getElementById(chipsId);
+    const sel = document.getElementById(selectId);
+    box.innerHTML = '';
+    const selected = Array.from(sel.options).filter(o => o.selected);
+    if (!selected.length) {
+      box.innerHTML = '<span class="text-muted small">None Selected</span>';
+      return;
+    }
+    selected.forEach(o => {
+      const chip = document.createElement('span');
+      chip.className = 'chip';
+      chip.innerHTML = `<span>${o.text.trim()}</span><button type="button" class="chip-close">&times;</button>`;
+      chip.querySelector('.chip-close').onclick = () => {
+        o.selected = false;
+        renderChipsMulti(selectId, chipsId);
+        syncListActive(selectId, 'list-' + selectId);
+      };
+      box.appendChild(chip);
+    });
+  }
+
+  function renderChipSingle(selectId, chipsId) {
+    const box = document.getElementById(chipsId);
+    const val = getSingleValue(selectId);
+    box.innerHTML = '';
+    if (!val) {
+      box.innerHTML = '<span class="text-muted small">None Selected</span>';
+      return;
+    }
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.innerHTML = `<span>Day: ${val}</span><button type="button" class="chip-close">&times;</button>`;
+    chip.querySelector('.chip-close').onclick = () => {
+      setSelectedValues(selectId, []);
+      renderChipSingle(selectId, chipsId);
+      syncListActive(selectId, 'list-' + selectId);
+    };
+    box.appendChild(chip);
+  }
+
+  // ----- List sync -----
+  function syncListActive(selectId, listId) {
+    const selected = new Set(getSelectedValues(selectId));
+    document.querySelectorAll(`#${listId} .list-group-item`)
+      .forEach(btn => btn.classList.toggle('active', selected.has(btn.dataset.value)));
+  }
+
+  // INIT
+  document.addEventListener('DOMContentLoaded', () => {
+    renderChipsMulti('campaign_id', 'chips-campaign_id');
+    renderChipSingle('day', 'chips-day');
+
+    // Campaign modal
+    document.getElementById('campaignModal').addEventListener('shown.bs.modal', () =>
+      syncListActive('campaign_id', 'list-campaign_id'));
+
+    document.getElementById('list-campaign_id').onclick = e => {
+      const btn = e.target.closest('.list-group-item');
+      if (!btn) return;
+      const cur = new Set(getSelectedValues('campaign_id'));
+      cur.has(btn.dataset.value) ? cur.delete(btn.dataset.value) : cur.add(btn.dataset.value);
+      setSelectedValues('campaign_id', [...cur]);
+      btn.classList.toggle('active');
+      renderChipsMulti('campaign_id', 'chips-campaign_id');
+    };
+
+    document.getElementById('search-campaign-list').oninput = e => {
+      const q = e.target.value.toLowerCase();
+      document.querySelectorAll('#list-campaign_id .list-group-item')
+        .forEach(b => b.style.display = b.textContent.toLowerCase().includes(q) ? '' : 'none');
+    };
+
+    document.querySelector('[data-selectall="campaign_id"]').onclick = () => {
+      const all = [...document.querySelectorAll('#list-campaign_id .list-group-item')]
+        .filter(el => el.style.display !== 'none').map(el => el.dataset.value);
+      setSelectedValues('campaign_id', [...new Set([...getSelectedValues('campaign_id'), ...all])]);
+      syncListActive('campaign_id', 'list-campaign_id');
+      renderChipsMulti('campaign_id', 'chips-campaign_id');
+    };
+
+    document.querySelector('[data-clearall="campaign_id"]').onclick = () => {
+      setSelectedValues('campaign_id', []);
+      syncListActive('campaign_id', 'list-campaign_id');
+      renderChipsMulti('campaign_id', 'chips-campaign_id');
+    };
+
+    // Day modal
+    document.getElementById('dayModal').addEventListener('shown.bs.modal', () => {
+      const val = getSingleValue('day');
+      document.querySelectorAll('#list-day .list-group-item')
+        .forEach(b => b.classList.toggle('active', b.dataset.value === String(val)));
+    });
+
+    document.getElementById('list-day').onclick = e => {
+      const btn = e.target.closest('.list-group-item');
+      if (!btn) return;
+      setSingleValue('day', btn.dataset.value);
+      syncListActive('day', 'list-day');
+      renderChipSingle('day', 'chips-day');
+    };
+
+    document.getElementById('search-day-list').oninput = e => {
+      const q = e.target.value;
+      document.querySelectorAll('#list-day .list-group-item')
+        .forEach(b => b.style.display = b.textContent.includes(q) ? '' : 'none');
+    };
+  });
+</script>
+{% endblock %}

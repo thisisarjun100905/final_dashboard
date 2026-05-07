@@ -1,0 +1,249 @@
+{% extends "index.html" %}
+
+{% block content %}
+<div class="container my-3">
+<!-- ================= HEADER ================= -->
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h5 class="mb-0" style="color:#004B87; font-weight:700;">WhatsApp Cost Analysis</h5>
+  <div class="d-flex gap-2 align-items-center">
+    <a href="{{ url_for('data_dashboard') }}" class="btn btn-outline-primary btn-sm">Back to Dashboard</a>
+    <form method="post" class="mb-0">
+      <input type="hidden" name="update_data" value="1">
+      <button type="submit" class="btn btn-primary btn-sm">Update Data</button>
+    </form>
+  </div>
+</div>
+<div class="text-end mb-2">
+  <small class="text-muted" style="font-size:0.75rem;">Last Updated: {{ last_updated }}</small>
+</div>
+
+{% if refreshed %}
+<div class="alert alert-success py-2 px-3 mb-3">Data updated successfully.</div>
+{% endif %}
+
+<!-- ================= MAIN FORM ================= -->
+<form method="post">
+
+<div class="row g-3">
+
+{% set filters = [
+ ('Campaign(s)','campaign_name',campaign_choices,campaigns_selected,'campaignModal','search-campaign'),
+ ('Month(s)','month',month_choices,month_selected,'monthModal','search-month'),
+ ('Branch(es)','branch',branch_choices,branches_selected,'branchModal','search-branch')
+] %}
+
+{% for label,id,choices,selected,modal,search in filters %}
+<div class="col-lg-4">
+  <div class="d-flex justify-content-between align-items-center mb-1">
+    <label class="form-label mb-0">{{ label }}</label>
+    <button type="button" class="btn btn-outline-secondary btn-sm"
+            data-bs-toggle="modal" data-bs-target="#{{ modal }}">
+      Edit
+    </button>
+  </div>
+
+  <div id="chips-{{ id }}" class="chips-container"></div>
+
+  <!-- Hidden select for form submission -->
+  <select id="{{ id }}" name="{{ id }}" class="d-none" multiple>
+    {% for c in choices %}
+      <option value="{{ c }}" {% if selected and c in selected %}selected{% endif %}>
+        {{ c }}
+      </option>
+    {% endfor %}
+  </select>
+</div>
+{% endfor %}
+
+<div class="col-lg-4">
+  <label class="form-label mb-1">Cost of Sale Factor</label>
+  <input type="number" step="any" min="0" name="cost_of_sale" id="cost_of_sale"
+         class="form-control form-control-sm"
+         placeholder="e.g. 134"
+         value="{{ cost_of_sale if cost_of_sale else '' }}">
+  <small class="text-muted">Added to each Cost Per Lead value</small>
+</div>
+
+<div class="col-12 text-end">
+  <button type="submit" class="btn btn-primary px-5">Apply Filters</button>
+</div>
+
+</div>
+
+<!-- ================= MODALS ================= -->
+{% macro filter_modal(id,title,choices,search_id,select_id) %}
+<div class="modal fade" id="{{ id }}" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h6 class="modal-title">{{ title }}</h6>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <div class="search-wrap">
+          <input id="{{ search_id }}" class="form-control form-control-sm mb-2" placeholder="Search...">
+        </div>
+        <div class="mb-2">
+          <button type="button" class="btn btn-primary btn-sm" data-selectall="{{ select_id }}">Select All</button>
+          <button type="button" class="btn btn-outline-danger btn-sm" data-clearall="{{ select_id }}">Clear All</button>
+        </div>
+        <div id="list-{{ select_id }}" class="list-group list-scroll">
+          {% for c in choices %}
+          <button type="button" class="list-group-item list-group-item-action" data-value="{{ c }}">{{ c }}</button>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary btn-sm" data-bs-dismiss="modal">Done</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endmacro %}
+
+{{ filter_modal('campaignModal','Select Campaigns',campaign_choices,'search-campaign','campaign_name') }}
+{{ filter_modal('monthModal','Select Months',month_choices,'search-month','month') }}
+{{ filter_modal('branchModal','Select Branches',branch_choices,'search-branch','branch') }}
+
+</form>
+
+<!-- ================= SUMMARY ================= -->
+<div class="alert alert-light border mt-3 small mb-3">
+  <b>Campaigns:</b> {{ selected_campaigns_display }} |
+  <b>Months:</b> {{ selected_months_display }} |
+  <b>Branches:</b> {{ selected_branches_display }}
+</div>
+
+<!-- ================= WA GRAPHS ================= -->
+<h5 class="mt-4 mb-3" style="color:#004B87; font-weight:700;">WhatsApp Campaigns</h5>
+<div class="row g-4">
+{% for title,g in [
+ ('Cost of Marketing',graph_cost_cum),
+ ('Cumulative Cost Per Lead',graph_cpl_cum),
+ ('Cost Per Lead vs RV Per Lead',graph_cpl_rv)
+] %}
+{% if g %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-body">
+      <h6 class="mb-2">{{ title }}</h6>
+      {{ g|safe }}
+    </div>
+  </div>
+</div>
+{% endif %}
+{% endfor %}
+</div>
+
+<!-- ================= FB GRAPHS ================= -->
+<h5 class="mt-5 mb-3" style="color:#004B87; font-weight:700;">FB Campaigns (Pan India)</h5>
+<div class="row g-4">
+{% if graph_fb_cpl_rv %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-body">
+      <h6 class="mb-2">FB Cost Per Lead vs RV Per Lead</h6>
+      {{ graph_fb_cpl_rv|safe }}
+    </div>
+  </div>
+</div>
+{% endif %}
+</div>
+
+<!-- ================= P-Max GRAPHS ================= -->
+<h5 class="mt-5 mb-3" style="color:#004B87; font-weight:700;">P-Max Campaigns (Pan India)</h5>
+<div class="row g-4">
+{% if graph_pmax_cpl_rv %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-body">
+      <h6 class="mb-2">P-Max Cost Per Lead vs RV Per Lead</h6>
+      {{ graph_pmax_cpl_rv|safe }}
+    </div>
+  </div>
+</div>
+{% endif %}
+</div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function sync(id){
+ const sel=document.getElementById(id);
+ const selected=new Set([...sel.options].filter(o=>o.selected).map(o=>o.value));
+ document.querySelectorAll(`#list-${id} .list-group-item`)
+  .forEach(b=>b.classList.toggle('active',selected.has(b.dataset.value)));
+}
+
+function render(id){
+ const box=document.getElementById(`chips-${id}`);
+ const sel=document.getElementById(id);
+ box.innerHTML='';
+ const selected=[...sel.options].filter(o=>o.selected);
+
+ if(!selected.length){
+   box.innerHTML='<span class="text-muted small">None Selected</span>';
+   return;
+ }
+
+ selected.forEach(o=>{
+  const chip=document.createElement('span');
+  chip.className='chip';
+  chip.innerHTML=o.text.trim()+` <button type="button" class="chip-close">&times;</button>`;
+  chip.querySelector('button').onclick=()=>{
+    o.selected=false;
+    render(id);
+    sync(id);
+  };
+  box.appendChild(chip);
+ });
+}
+
+function setup(id,search){
+ const sel=document.getElementById(id);
+ const list=document.getElementById(`list-${id}`);
+
+ list.onclick=e=>{
+  const btn=e.target.closest('.list-group-item');
+  if(!btn) return;
+  const opt=[...sel.options].find(o=>o.value===btn.dataset.value);
+  opt.selected=!opt.selected;
+  render(id);
+  sync(id);
+ };
+
+ document.getElementById(search).oninput=e=>{
+  const q=e.target.value.toLowerCase();
+  list.querySelectorAll('.list-group-item')
+   .forEach(b=>b.style.display=b.textContent.toLowerCase().includes(q)?'':'none');
+ };
+
+ document.querySelector(`[data-selectall="${id}"]`).onclick=()=>{
+  [...sel.options].forEach(o=>o.selected=true);
+  render(id);
+  sync(id);
+ };
+
+ document.querySelector(`[data-clearall="${id}"]`).onclick=()=>{
+  [...sel.options].forEach(o=>o.selected=false);
+  render(id);
+  sync(id);
+ };
+}
+
+document.addEventListener('DOMContentLoaded',()=>{
+ const searchMap={
+   campaign_name:'search-campaign',
+   month:'search-month',
+   branch:'search-branch'
+ };
+ ['campaign_name','month','branch'].forEach(id=>{
+   setup(id,searchMap[id]);
+   render(id);
+   sync(id);
+ });
+});
+</script>
+{% endblock %}

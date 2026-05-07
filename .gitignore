@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+*.log
+.venv/
+venv/
+.env
+
+# Service-account / credentials — never commit
+app/attemp-rate-*.json
+*-service-account*.json
+*credentials*.json
