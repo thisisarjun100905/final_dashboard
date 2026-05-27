@@ -347,6 +347,10 @@ def branch_dashboard():
     pan_ind_deal1 = pan_india(grouped_deal1, 'deal_closed', False) 
     pan_ind_rv = pan_india(grouped_rv, "rv_3_yr_hot_team", False)  
     pan_ind_rv1 = pan_india(grouped_rv1, "rv_3_year", False)   # deals sum
+    pan_ind_rv1["rv_3_year"] = (
+    pan_ind_rv1["rv_3_year"]
+    .apply(lambda x: '{:,.0f}'.format(x))
+)
     pan_ind_app  = pan_india(grouped_app,  'appointment', False)   # appointments sum
     pan_ind_lead = pan_india(grouped_lead, 'Leads_created', False)       # leads sum
 
@@ -573,8 +577,9 @@ def data_dashboard():
     selected_campaign_names = request.form.getlist('campaign_id')
 
     campaigns_selected = (
-        campaign_names_to_ids(selected_campaign_names)
-        if selected_campaign_names else []
+    campaign_names_to_ids(selected_campaign_names)
+    if selected_campaign_names
+    else list(dict_camp.values())   # ALL marketing campaigns by default
     )
 
     # =================================================
@@ -626,9 +631,23 @@ def data_dashboard():
     month_choices = [MONTH_NAME_MAP.get(m, str(m)) for m in month_choices_last4]
 
     # Read selected month names from form and convert back to ints
+    # month_names_selected = request.values.getlist('month')
+    # months_selected = [MONTH_NAME_REVERSE[n] for n in month_names_selected if n in MONTH_NAME_REVERSE]
     month_names_selected = request.values.getlist('month')
-    months_selected = [MONTH_NAME_REVERSE[n] for n in month_names_selected if n in MONTH_NAME_REVERSE]
 
+# If nothing selected -> all months
+    if month_names_selected:
+        months_selected = [
+            MONTH_NAME_REVERSE[n]
+            for n in month_names_selected
+            if n in MONTH_NAME_REVERSE
+        ]
+    else:
+        months_selected = month_choices_raw[:]   # ALL months
+        month_names_selected = [
+            MONTH_NAME_MAP[m]
+            for m in month_choices_raw
+        ]
     branches_selected = request.values.getlist('branch')
 
     # IMPORTANT: empty list means "no filter"

@@ -494,6 +494,40 @@ def filter_rv_data(
     )
     return agg
 
+
+
+def filter_rv_data_closed(
+    df: pd.DataFrame,
+    campaign_ids: List[int],
+    months: List[int],
+    branches: Optional[List[str]] = None
+) -> pd.DataFrame:
+    """
+    Input columns (flexible):
+      campaign_id, month|month_no, day|no_days, appointment_close|appointments|appointment, branch?
+    Output columns:
+      month, day, appointment_close (sum), appointment (cumulative within month)
+    """
+    base = _coerce_and_filter(df, campaign_ids, months, branches)
+    if base.empty:
+        return pd.DataFrame(columns=["month", "day", "deal_closed" , "rv_3_yr_hot_team"])
+
+    app_col = _first_existing_col(base, ["rv_3_yr_hot_team", "rv_3_year"])
+    leads_col = _first_existing_col(base, ["deal_closed", "deal_closed_count"])
+    if app_col is None or not {"month", "day"}.issubset(base.columns):
+        return pd.DataFrame(columns=["month", "day", "deal_closed" , "rv_3_yr_hot_team"])
+
+    base[app_col] = _to_float_series(base[app_col]).fillna(0)
+    base[leads_col] = _to_float_series(base[leads_col]).fillna(0)
+    agg = (
+        base.groupby(["month", "day"], as_index=False)
+            .agg(rv_3_yr_hot_team_cum=(app_col, "sum") ,
+                 deal_closed_cum = (leads_col , "sum"))
+            .sort_values(["month", "day"])
+    )
+    return agg
+
+
 def filter_rv_rate(df_rv, col_name):
 
     # Step 2 — Validate df_rv required columns

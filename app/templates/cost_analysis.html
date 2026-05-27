@@ -165,6 +165,22 @@
 {% endif %}
 </div>
 
+<!-- COMBINED CURVE FOR PAN INDIA -->
+
+<h5 class="mt-5 mb-3" style="color:#004B87; font-weight:700;">Marketing  Campaigns (Pan India)</h5>
+<div class="row g-4">
+{% if graph_combined_com %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-body">
+      <h6 class="mb-2">Cost of marketing</h6>
+      {{ graph_combined_com|safe }}
+    </div>
+  </div>
+</div>
+{% endif %}
+</div>
+
 </div>
 {% endblock %}
 

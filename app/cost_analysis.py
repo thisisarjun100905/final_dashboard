@@ -4,13 +4,14 @@ import plotly.graph_objects as go
 from datetime import datetime
 from app.data_fetcher import fetch_table
 from app.connection import create_conn_240
-from app.filters import filter_rv_data, filter_rv_rate
+from app.filters import filter_rv_data, filter_rv_rate , filter_rv_data_closed
 
 
 # --------------- Cache ---------------
 _WA_CACHE = {"df": None, "fetched_at": None}
 _FB_CACHE = {"df": None, "fetched_at": None}
 _PMAX_CACHE = {"df": None, "fetched_at": None}
+_MAILER_CACHE = {"df": None, "fetched_at": None}
 
 # FB campaign IDs
 FB_CAMPAIGN_IDS = [108, 159, 196, 285, 286]
@@ -24,6 +25,9 @@ FB_CAMPAIGN_NAMES = [
 
 # P-Max campaign IDs
 PMAX_CAMPAIGN_IDS = [111, 112]
+
+# Mailer campaign IDs
+MAILER_CAMPAIGN_IDS = [208 , 242 , 288]
 
 
 def _fetch_fb_data(force_update=False):
@@ -104,6 +108,48 @@ def _fetch_wa_data(force_update=False):
 
 def _filter_wa_data(df, campaigns, months, branches):
     """Filter WhatsApp cost data by campaign_name, month, branch."""
+    filtered = df.copy()
+    if campaigns:
+        filtered = filtered[filtered['campaign_name'].isin(campaigns)]
+    if months:
+        filtered = filtered[filtered['month'].isin(months)]
+    if branches:
+        bl = [b.strip().lower() for b in branches]
+        filtered = filtered[filtered['branch'].str.lower().isin(bl)]
+    return filtered
+
+def _fetch_mailer_data(force_update=False):
+    global _MAILER_CACHE
+    if force_update or _MAILER_CACHE["df"] is None:
+        conn = create_conn_240()
+        try:
+            df = fetch_table("dashboard_internal_mailer_com", conn)
+        finally:
+            conn.close()
+        # Standardise columns
+        if 'log_date' in df.columns:
+            df['log_date'] = pd.to_datetime(df['log_date'], errors='coerce')
+            df['month'] = df['log_date'].dt.month
+            df['day'] = df['log_date'].dt.day
+        for col in ['leads_count', 'sent_count', 'cost']:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+        if 'cost/leads' in df.columns:
+            df['cost_per_lead'] = pd.to_numeric(df['cost/leads'], errors='coerce')
+        elif 'cost' in df.columns and 'leads_count' in df.columns:
+            df['cost_per_lead'] = df['cost'] / df['leads_count'].replace(0, pd.NA)
+        if 'branch' in df.columns:
+            df['branch'] = df['branch'].astype(str).str.strip()
+        if 'campaign_name' in df.columns:
+            df['campaign_name'] = df['campaign_name'].astype(str).str.strip()
+            df['campaign_name'] = df['campaign_name'].replace('customoffer', 'marketing pilot A')
+        _MAILER_CACHE["df"] = df
+        _MAILER_CACHE["fetched_at"] = datetime.now()
+    return _MAILER_CACHE["df"]
+
+
+def _filter_mailer_data(df, campaigns, months, branches):
+    """Filter Mailer cost data by campaign_name, month, branch."""
     filtered = df.copy()
     if campaigns:
         filtered = filtered[filtered['campaign_name'].isin(campaigns)]
@@ -376,6 +422,225 @@ def _make_meta_cpl_rv_combined_chart(cost_df, rv_df, months, label="FB", cost_of
     )
     return fig
 
+def _make_combined_com_curve(
+    wa_df,
+    fb_df,
+    pmax_df,
+    mailer_df,
+    rv_df,
+    months
+):
+    """
+    Combined COM Curve
+
+    COM = Cost / RV
+
+    WA + FB + PMAX + MAILER combined
+    """
+
+    fig = go.Figure()
+
+    MONTH_NAME = {
+        1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr",
+        5: "May", 6: "Jun", 7: "Jul", 8: "Aug",
+        9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"
+    }
+
+    color_palette = [
+        "#4983f6",
+        "#38cb38",
+        "#fd3a3a",
+        "#e2a60e",
+        "#e377c2",
+        "#bcbd22"
+    ]
+
+    for idx, m in enumerate(months):
+
+        color = color_palette[idx % len(color_palette)]
+        month_label = MONTH_NAME.get(m, f"Month {m}")
+
+        # ---------------- WA ----------------
+        wa_mdf = wa_df[wa_df['month'] == m]
+
+        wa_day = pd.DataFrame()
+
+        if not wa_mdf.empty:
+
+            wa_day = (
+                wa_mdf.groupby('day')[['cost']]
+                .sum()
+                .reset_index()
+            )
+
+            wa_day.rename(columns={
+                'cost': 'amount'
+            }, inplace=True)
+
+        # ---------------- FB ----------------
+        fb_mdf = fb_df[fb_df['month'] == m]
+
+        fb_day = pd.DataFrame()
+
+        if not fb_mdf.empty:
+
+            fb_day = (
+                fb_mdf.groupby('day')[['amount']]
+                .sum()
+                .reset_index()
+            )
+
+        # ---------------- PMAX ----------------
+        pmax_mdf = pmax_df[pmax_df['month'] == m]
+
+        pmax_day = pd.DataFrame()
+
+        if not pmax_mdf.empty:
+
+            pmax_day = (
+                pmax_mdf.groupby('day')[['amount']]
+                .sum()
+                .reset_index()
+            )
+
+        # ---------------- MAILER ----------------
+        mailer_mdf = mailer_df[mailer_df['month'] == m]
+
+        mailer_day = pd.DataFrame()
+
+        if not mailer_mdf.empty:
+
+            mailer_day = (
+                mailer_mdf.groupby('day')[['cost']]
+                .sum()
+                .reset_index()
+            )
+
+            mailer_day.rename(columns={
+                'cost': 'amount'
+            }, inplace=True)
+
+        # ---------------- COMBINED COST ----------------
+        combined_cost = pd.concat(
+            [
+                wa_day,
+                fb_day,
+                pmax_day,
+                mailer_day
+            ],
+            ignore_index=True
+        )
+
+        if combined_cost.empty:
+            continue
+
+        combined_cost = (
+            combined_cost.groupby('day')[['amount']]
+            .sum()
+            .reset_index()
+            .sort_values('day')
+        )
+
+        # ---------------- RV ----------------
+        rdf = rv_df[rv_df['month'] == m]
+
+        if rdf.empty:
+            continue
+
+        rv_day = (
+            rdf.groupby('day')[["rv_3_yr_hot_team_cum"]]
+            .sum()
+            .reset_index()
+            .sort_values('day')
+        )
+
+        # ---------------- MERGE ----------------
+        final_df = pd.merge(
+            combined_cost,
+            rv_day,
+            on='day',
+            how='outer'
+        ).fillna(0)
+
+        final_df = final_df.sort_values('day')
+
+        # ---------------- CUMULATIVE ----------------
+        final_df['cum_cost'] = final_df['amount'].cumsum()
+
+        final_df["rv_3_yr_hot_team_cum"] = pd.to_numeric(
+            final_df["rv_3_yr_hot_team_cum"],
+            errors="coerce"
+        ).fillna(0)
+
+        final_df['cum_rv'] = final_df[
+            'rv_3_yr_hot_team_cum'
+        ]
+
+        # ---------------- COM ----------------
+        final_df['com'] = (
+            final_df['cum_cost']
+            / final_df['cum_rv'].replace(0, pd.NA)
+        )*100
+
+        final_df = final_df[final_df['com'] > 0]
+
+        # Uncomment below line if percentage needed
+        # final_df['com'] = final_df['com'] * 100
+
+        # ---------------- STATIC CURVE ----------------
+        max_day = int(final_df['day'].max())
+
+        all_days = pd.DataFrame({
+            'day': range(1, max_day + 1)
+        })
+
+        final_df = pd.merge(
+            all_days,
+            final_df[['day', 'com']],
+            on='day',
+            how='left'
+        )
+
+        final_df['com'] = final_df['com'].ffill()
+
+        # ---------------- PLOT ----------------
+        fig.add_trace(go.Scatter(
+            x=final_df['day'],
+            y=final_df['com'],
+            mode='lines+markers',
+            name=f"{month_label} COM",
+            line=dict(
+                color=color,
+                width=3
+            ),
+            marker=dict(
+                color=color,
+                size=6
+            )
+        ))
+
+    fig.update_layout(
+        title="Combined COM Curve",
+        xaxis_title="Day of Month",
+        yaxis_title="Cost / RV",
+        legend=dict(
+            orientation="h",
+            yanchor="top",
+            y=-0.25,
+            xanchor="center",
+            x=0.5
+        ),
+        margin=dict(
+            l=50,
+            r=30,
+            t=60,
+            b=90
+        ),
+        height=450
+    )
+
+    return fig
+
 
 def cost_analysis():
     """Route handler for cost analysis page."""
@@ -433,23 +698,37 @@ def cost_analysis():
 
     # --- RV Per Lead from conversion table ---
     # Campaign ID to group mapping for RV per lead
-    RV_CAMPAIGN_IDS = [200, 160, 256, 258, 243]
+    RV_CAMPAIGN_IDS = [200, 160, 256, 258, 243 , 244 , 233]
+    combined_rv_campaigns = (
+    RV_CAMPAIGN_IDS +
+    FB_CAMPAIGN_IDS +
+    PMAX_CAMPAIGN_IDS +
+    MAILER_CAMPAIGN_IDS
+    )
 
     from app.routes import _get_data, _DATA_CACHE, _standardize_columns, _prepare_df
     dfs = _get_data(force_update=is_update_click)
     conversion_data = dfs['conversion']
-
+    rv_deal_closed = dfs['conversion_deal']
+    # conversion_data.rename(columns={'rv_3_year':'rv_3_yr_hot_team'}, inplace=True)
     filtered_rv_lead = filter_rv_data(
         conversion_data, RV_CAMPAIGN_IDS, months_selected, branches_selected
     )
     filtered_rv_lead_rate = filter_rv_rate(filtered_rv_lead, 'RV_Lead_Rate')
     filtered_rv_lead_rate = _prepare_df(filtered_rv_lead_rate)
 
+    combined_rv = filter_rv_data_closed(
+    rv_deal_closed,
+    combined_rv_campaigns,
+    months_selected,
+    branches=None
+    )
+    combined_rv = _prepare_df(combined_rv)
+
     # Charts (WA)
     fig_cost_cum = _make_cumulative_line_chart(filtered, 'cost', "Cost of Marketing", "Cost of Marketing", months_selected)
     fig_cpl_cum = _make_cumulative_cpl_chart(filtered, months_selected, cost_of_sale)
     fig_cpl_rv = _make_cpl_rv_combined_chart(filtered, filtered_rv_lead_rate, months_selected, cost_of_sale)
-
     # --- FB Cost/Lead and RV/Lead (Pan India, no branch filter) ---
     fb_df = _fetch_fb_data(force_update=is_update_click)
     # Use all rows from the Meta table (already FB-specific), only filter by month
@@ -469,10 +748,29 @@ def cost_analysis():
     pmax_filtered = pmax_df.copy()
     if months_selected:
         pmax_filtered = pmax_filtered[pmax_filtered['month'].isin(months_selected)]
+    
+    # --- MAILER Cost Data ---
+    mailer_df = _fetch_mailer_data(force_update=is_update_click)
+
+    mailer_filtered = mailer_df.copy()
+
+    if months_selected:
+        mailer_filtered = mailer_filtered[
+            mailer_filtered['month'].isin(months_selected)
+        ]
 
     pmax_rv_lead = filter_rv_data(conversion_data, PMAX_CAMPAIGN_IDS, months_selected, branches=None)
     pmax_rv_lead_rate = filter_rv_rate(pmax_rv_lead, 'RV_Lead_Rate')
     pmax_rv_lead_rate = _prepare_df(pmax_rv_lead_rate)
+
+    fig_combined_com = _make_combined_com_curve(
+    filtered,
+    fb_filtered,
+    pmax_filtered,
+    mailer_filtered,
+    combined_rv,
+    months_selected
+    )
 
     fig_pmax_cpl_rv = _make_meta_cpl_rv_combined_chart(pmax_filtered, pmax_rv_lead_rate, months_selected, label="P-Max", cost_of_sale=cost_of_sale)
 
@@ -501,7 +799,11 @@ def cost_analysis():
         graph_cpl_rv=fig_cpl_rv.to_html(full_html=False, include_plotlyjs=False),
         graph_fb_cpl_rv=fig_fb_cpl_rv.to_html(full_html=False, include_plotlyjs=False),
         graph_pmax_cpl_rv=fig_pmax_cpl_rv.to_html(full_html=False, include_plotlyjs=False),
+        graph_combined_com=fig_combined_com.to_html(
+        full_html=False,
+        include_plotlyjs=False )
     )
+
 
     resp = make_response(html)
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
