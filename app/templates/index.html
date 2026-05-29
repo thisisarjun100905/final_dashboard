@@ -14,6 +14,11 @@
   <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link rel="dns-prefetch" href="//cdn.plot.ly">
   <link rel="preconnect" href="https://cdn.plot.ly" crossorigin>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+
+  <!-- Fonts: Onest (display) · DM Sans (body) · Fira Code (data/mono) -->
+  <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;500;600;700;800&family=DM+Sans:opsz,wght@9..40,400;9..40,500;9..40,600&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
 
   <!-- Bootstrap -->
   <link
@@ -29,21 +34,38 @@
   {% block head_extra %}{% endblock %}
 </head>
 <body>
-  <div class="container my-4">
-    <h1 class="text-center mb-3">Justdial Dashboard</h1>
-    <div id="tabs-content">
-      {% block content %}{% endblock %}
-    </div>
-  </div>
 
-  <!-- Bootstrap JS bundle -->
+  <!-- ── Sticky Header ──────────────────────────────────── -->
+  <header class="site-header">
+    <div class="header-inner">
+
+      <!-- Left: Justdial logo + product name -->
+      <div class="header-brand">
+        <span class="jd-logo">
+          <span class="logo-just">Just</span><span class="logo-dial">dial</span>
+        </span>
+        <span class="brand-sub">Marketing Intelligence</span>
+      </div>
+
+      <!-- Right: live indicator -->
+      <span class="header-status">&#9679;&nbsp;LIVE</span>
+
+    </div>
+  </header>
+
+  <!-- ── Page Content ───────────────────────────────────── -->
+  <main class="site-main">
+    {% block content %}{% endblock %}
+  </main>
+
+  <!-- Bootstrap JS -->
   <script
     src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
     integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
     crossorigin="anonymous"
   ></script>
 
-  <!-- Global: loading state on submit -->
+  <!-- Global: loading spinner on any form submit -->
   <script>
     document.addEventListener('submit', function (e) {
       const form = e.target;

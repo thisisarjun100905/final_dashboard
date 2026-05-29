@@ -1,4 +1,5 @@
 from flask import render_template, request, make_response
+import re
 import pandas as pd
 import plotly.graph_objects as go
 from datetime import datetime
@@ -30,6 +31,21 @@ PMAX_CAMPAIGN_IDS = [111, 112]
 MAILER_CAMPAIGN_IDS = [208 , 242 , 288]
 
 
+# --------------- Campaign name normalisation ---------------
+_CAMPAIGN_NORM_PATTERNS = [
+    (re.compile(r'^p[\s\-]?max$', re.IGNORECASE), 'Pmax'),
+]
+
+def _normalize_campaign_name(name):
+    if pd.isna(name):
+        return name
+    s = str(name).strip()
+    for pattern, canonical in _CAMPAIGN_NORM_PATTERNS:
+        if pattern.fullmatch(s):
+            return canonical
+    return s
+
+
 def _fetch_fb_data(force_update=False):
     """Fetch FB cost data from dashboard_internal_meta_com_daywise."""
     global _FB_CACHE
@@ -48,6 +64,7 @@ def _fetch_fb_data(force_update=False):
                 df[col] = pd.to_numeric(df[col], errors='coerce')
         if 'campaign_name' in df.columns:
             df['campaign_name'] = df['campaign_name'].astype(str).str.strip()
+            df['campaign_name'] = df['campaign_name'].map(_normalize_campaign_name)
         _FB_CACHE["df"] = df
         _FB_CACHE["fetched_at"] = datetime.now()
     return _FB_CACHE["df"]
@@ -71,6 +88,7 @@ def _fetch_pmax_data(force_update=False):
                 df[col] = pd.to_numeric(df[col], errors='coerce')
         if 'campaign_name' in df.columns:
             df['campaign_name'] = df['campaign_name'].astype(str).str.strip()
+            df['campaign_name'] = df['campaign_name'].map(_normalize_campaign_name)
         _PMAX_CACHE["df"] = df
         _PMAX_CACHE["fetched_at"] = datetime.now()
     return _PMAX_CACHE["df"]
@@ -101,6 +119,7 @@ def _fetch_wa_data(force_update=False):
         if 'campaign_name' in df.columns:
             df['campaign_name'] = df['campaign_name'].astype(str).str.strip()
             df['campaign_name'] = df['campaign_name'].replace('customoffer', 'marketing pilot A')
+            df['campaign_name'] = df['campaign_name'].map(_normalize_campaign_name)
         _WA_CACHE["df"] = df
         _WA_CACHE["fetched_at"] = datetime.now()
     return _WA_CACHE["df"]
@@ -143,6 +162,7 @@ def _fetch_mailer_data(force_update=False):
         if 'campaign_name' in df.columns:
             df['campaign_name'] = df['campaign_name'].astype(str).str.strip()
             df['campaign_name'] = df['campaign_name'].replace('customoffer', 'marketing pilot A')
+            df['campaign_name'] = df['campaign_name'].map(_normalize_campaign_name)
         _MAILER_CACHE["df"] = df
         _MAILER_CACHE["fetched_at"] = datetime.now()
     return _MAILER_CACHE["df"]
@@ -648,11 +668,15 @@ def cost_analysis():
     is_update_click = request.method == 'POST' and request.form.get('update_data') == '1'
     is_filters_click = request.method == 'POST' and not is_update_click
 
-    df = _fetch_wa_data(force_update=is_update_click)
+    # === FETCH ALL DATA SOURCES EARLY ===
+    df       = _fetch_wa_data(force_update=is_update_click)
+    fb_df    = _fetch_fb_data(force_update=is_update_click)
+    pmax_df  = _fetch_pmax_data(force_update=is_update_click)
+    mailer_df = _fetch_mailer_data(force_update=is_update_click)
+
     last_updated = _WA_CACHE["fetched_at"].strftime("%d-%b-%Y %I:%M %p") if _WA_CACHE["fetched_at"] else "Never"
 
-    # Build choices from data
-    campaign_choices = sorted(df['campaign_name'].dropna().unique().tolist()) if 'campaign_name' in df.columns else []
+    # === BUILD FILTER CHOICES ===
     branch_choices = sorted(df['branch'].dropna().unique().tolist()) if 'branch' in df.columns else []
 
     MONTH_NAME_MAP = {
@@ -661,118 +685,129 @@ def cost_analysis():
     }
     MONTH_NAME_REVERSE = {v: k for k, v in MONTH_NAME_MAP.items()}
 
-    # Show last 4 months dynamically
-    current_month = datetime.now().month
+    current_month  = datetime.now().month
     allowed_months = [(current_month - i - 1) % 12 + 1 for i in range(3, -1, -1)]
-    month_choices = [MONTH_NAME_MAP[m] for m in allowed_months]
+    month_choices  = [MONTH_NAME_MAP[m] for m in allowed_months]
 
-    # Read filters
+    def _names(src):
+        return set(src['campaign_name'].dropna().unique()) if 'campaign_name' in src.columns else set()
+
+    wa_names     = _names(df)
+    fb_names     = _names(fb_df)
+    pmax_names   = _names(pmax_df)
+    mailer_names = _names(mailer_df)
+
+    # Single unified campaign list covering all 4 sources
+    campaign_choices = sorted(wa_names | fb_names | pmax_names | mailer_names)
+
+    # === READ FILTERS ===
     if is_filters_click:
-        campaigns_selected = request.form.getlist('campaign_name')
+        campaigns_selected   = request.form.getlist('campaign_name')
         month_names_selected = request.form.getlist('month')
-        branches_selected = request.form.getlist('branch')
+        branches_selected    = request.form.getlist('branch')
         try:
             cost_of_sale = float(request.form.get('cost_of_sale', 0) or 0)
         except (ValueError, TypeError):
             cost_of_sale = 0.0
     else:
-        campaigns_selected = []
+        campaigns_selected   = []
         month_names_selected = []
-        branches_selected = []
-        cost_of_sale = 0.0
+        branches_selected    = []
+        cost_of_sale         = 0.0
 
     months_selected = [MONTH_NAME_REVERSE[n] for n in month_names_selected if n in MONTH_NAME_REVERSE]
 
-    # Default to all allowed months when none selected so charts render on first load
     if not months_selected:
-        months_selected = allowed_months[:]
+        months_selected      = allowed_months[:]
         month_names_selected = [MONTH_NAME_MAP[m] for m in months_selected]
 
-    # Display strings
-    selected_campaigns_display = ", ".join(campaigns_selected) if campaigns_selected else "None"
-    selected_months_display = ", ".join(month_names_selected) if month_names_selected else "None"
-    selected_branches_display = ", ".join(branches_selected) if branches_selected else "None"
+    # === DISPLAY STRINGS ===
+    selected_campaigns_display = ", ".join(campaigns_selected)   if campaigns_selected   else "None"
+    selected_months_display    = ", ".join(month_names_selected) if month_names_selected else "None"
+    selected_branches_display  = ", ".join(branches_selected)    if branches_selected    else "None"
 
-    # Filter WA data
-    filtered = _filter_wa_data(df, campaigns_selected, months_selected, branches_selected)
+    # === FILTER DATA FOR SECTION CHARTS ===
+    filtered       = _filter_wa_data(df, campaigns_selected, months_selected, branches_selected)
+    fb_filtered    = fb_df[fb_df['month'].isin(months_selected)].copy()    if months_selected else fb_df.copy()
+    pmax_filtered  = pmax_df[pmax_df['month'].isin(months_selected)].copy() if months_selected else pmax_df.copy()
+    mailer_filtered = mailer_df[mailer_df['month'].isin(months_selected)].copy() if months_selected else mailer_df.copy()
 
-    # --- RV Per Lead from conversion table ---
-    # Campaign ID to group mapping for RV per lead
-    RV_CAMPAIGN_IDS = [200, 160, 256, 258, 243 , 244 , 233]
-    combined_rv_campaigns = (
-    RV_CAMPAIGN_IDS +
-    FB_CAMPAIGN_IDS +
-    PMAX_CAMPAIGN_IDS +
-    MAILER_CAMPAIGN_IDS
-    )
+    # === FILTER DATA FOR COM CHART (month + COM campaign, Pan India) ===
+    wa_for_com     = df[df['month'].isin(months_selected)].copy()          if months_selected else df.copy()
+    fb_for_com     = fb_filtered.copy()
+    pmax_for_com   = pmax_filtered.copy()
+    mailer_for_com = mailer_filtered.copy()
+
+    if campaigns_selected:
+        com_sel = set(campaigns_selected)
+        if 'campaign_name' in wa_for_com.columns:
+            wa_for_com = wa_for_com[wa_for_com['campaign_name'].isin(com_sel)]
+        if 'campaign_name' in fb_for_com.columns:
+            fb_for_com = fb_for_com[fb_for_com['campaign_name'].isin(com_sel)]
+        if 'campaign_name' in pmax_for_com.columns:
+            pmax_for_com = pmax_for_com[pmax_for_com['campaign_name'].isin(com_sel)]
+        if 'campaign_name' in mailer_for_com.columns:
+            mailer_for_com = mailer_for_com[mailer_for_com['campaign_name'].isin(com_sel)]
+
+    # === RV DATA ===
+    RV_CAMPAIGN_IDS      = [200, 160, 256, 258, 243, 244, 233]
+    combined_rv_campaigns = RV_CAMPAIGN_IDS + FB_CAMPAIGN_IDS + PMAX_CAMPAIGN_IDS + MAILER_CAMPAIGN_IDS
 
     from app.routes import _get_data, _DATA_CACHE, _standardize_columns, _prepare_df
-    dfs = _get_data(force_update=is_update_click)
+    dfs             = _get_data(force_update=is_update_click)
     conversion_data = dfs['conversion']
-    rv_deal_closed = dfs['conversion_deal']
-    # conversion_data.rename(columns={'rv_3_year':'rv_3_yr_hot_team'}, inplace=True)
-    filtered_rv_lead = filter_rv_data(
-        conversion_data, RV_CAMPAIGN_IDS, months_selected, branches_selected
-    )
+    rv_deal_closed  = dfs['conversion_deal']
+
+    filtered_rv_lead      = filter_rv_data(conversion_data, RV_CAMPAIGN_IDS, months_selected, branches_selected)
     filtered_rv_lead_rate = filter_rv_rate(filtered_rv_lead, 'RV_Lead_Rate')
     filtered_rv_lead_rate = _prepare_df(filtered_rv_lead_rate)
 
-    combined_rv = filter_rv_data_closed(
-    rv_deal_closed,
-    combined_rv_campaigns,
-    months_selected,
-    branches=None
-    )
+    # COM RV: include only IDs for the sources that have a selected campaign
+    if campaigns_selected:
+        sel_set    = set(campaigns_selected)
+        com_rv_ids = []
+        if sel_set & wa_names:
+            com_rv_ids.extend(RV_CAMPAIGN_IDS)
+        if sel_set & fb_names:
+            com_rv_ids.extend(FB_CAMPAIGN_IDS)
+        if sel_set & pmax_names:
+            com_rv_ids.extend(PMAX_CAMPAIGN_IDS)
+        if sel_set & mailer_names:
+            com_rv_ids.extend(MAILER_CAMPAIGN_IDS)
+        if not com_rv_ids:
+            com_rv_ids = combined_rv_campaigns
+    else:
+        com_rv_ids = combined_rv_campaigns
+
+    combined_rv = filter_rv_data_closed(rv_deal_closed, com_rv_ids, months_selected, branches=None)
     combined_rv = _prepare_df(combined_rv)
 
-    # Charts (WA)
+    # === WA CHARTS ===
     fig_cost_cum = _make_cumulative_line_chart(filtered, 'cost', "Cost of Marketing", "Cost of Marketing", months_selected)
-    fig_cpl_cum = _make_cumulative_cpl_chart(filtered, months_selected, cost_of_sale)
-    fig_cpl_rv = _make_cpl_rv_combined_chart(filtered, filtered_rv_lead_rate, months_selected, cost_of_sale)
-    # --- FB Cost/Lead and RV/Lead (Pan India, no branch filter) ---
-    fb_df = _fetch_fb_data(force_update=is_update_click)
-    # Use all rows from the Meta table (already FB-specific), only filter by month
-    fb_filtered = fb_df.copy()
-    if months_selected:
-        fb_filtered = fb_filtered[fb_filtered['month'].isin(months_selected)]
+    fig_cpl_cum  = _make_cumulative_cpl_chart(filtered, months_selected, cost_of_sale)
+    fig_cpl_rv   = _make_cpl_rv_combined_chart(filtered, filtered_rv_lead_rate, months_selected, cost_of_sale)
 
-    # FB RV from conversion table using FB campaign IDs (Pan India = no branch filter)
-    fb_rv_lead = filter_rv_data(conversion_data, FB_CAMPAIGN_IDS, months_selected, branches=None)
+    # === FB CHARTS ===
+    fb_rv_lead      = filter_rv_data(conversion_data, FB_CAMPAIGN_IDS, months_selected, branches=None)
     fb_rv_lead_rate = filter_rv_rate(fb_rv_lead, 'RV_Lead_Rate')
     fb_rv_lead_rate = _prepare_df(fb_rv_lead_rate)
+    fig_fb_cost_cum = _make_cumulative_line_chart(fb_filtered, 'amount', "FB Cost of Marketing", "Cost of Marketing", months_selected)
+    fig_fb_cpl_rv   = _make_meta_cpl_rv_combined_chart(fb_filtered, fb_rv_lead_rate, months_selected, label="FB", cost_of_sale=cost_of_sale)
 
-    fig_fb_cpl_rv = _make_meta_cpl_rv_combined_chart(fb_filtered, fb_rv_lead_rate, months_selected, label="FB", cost_of_sale=cost_of_sale)
-
-    # --- P-Max Cost/Lead and RV/Lead (Pan India, no branch filter) ---
-    pmax_df = _fetch_pmax_data(force_update=is_update_click)
-    pmax_filtered = pmax_df.copy()
-    if months_selected:
-        pmax_filtered = pmax_filtered[pmax_filtered['month'].isin(months_selected)]
-    
-    # --- MAILER Cost Data ---
-    mailer_df = _fetch_mailer_data(force_update=is_update_click)
-
-    mailer_filtered = mailer_df.copy()
-
-    if months_selected:
-        mailer_filtered = mailer_filtered[
-            mailer_filtered['month'].isin(months_selected)
-        ]
-
-    pmax_rv_lead = filter_rv_data(conversion_data, PMAX_CAMPAIGN_IDS, months_selected, branches=None)
+    # === P-MAX CHARTS ===
+    pmax_rv_lead      = filter_rv_data(conversion_data, PMAX_CAMPAIGN_IDS, months_selected, branches=None)
     pmax_rv_lead_rate = filter_rv_rate(pmax_rv_lead, 'RV_Lead_Rate')
     pmax_rv_lead_rate = _prepare_df(pmax_rv_lead_rate)
+    fig_pmax_cost_cum = _make_cumulative_line_chart(pmax_filtered, 'amount', "P-Max Cost of Marketing", "Cost of Marketing", months_selected)
+    fig_pmax_cpl_rv   = _make_meta_cpl_rv_combined_chart(pmax_filtered, pmax_rv_lead_rate, months_selected, label="P-Max", cost_of_sale=cost_of_sale)
 
+    # === MAILER CHARTS ===
+    fig_mailer_cost_cum = _make_cumulative_line_chart(mailer_filtered, 'cost', "Mailer Cost of Marketing", "Cost of Marketing", months_selected)
+
+    # === COMBINED COM CHART ===
     fig_combined_com = _make_combined_com_curve(
-    filtered,
-    fb_filtered,
-    pmax_filtered,
-    mailer_filtered,
-    combined_rv,
-    months_selected
+        wa_for_com, fb_for_com, pmax_for_com, mailer_for_com, combined_rv, months_selected
     )
-
-    fig_pmax_cpl_rv = _make_meta_cpl_rv_combined_chart(pmax_filtered, pmax_rv_lead_rate, months_selected, label="P-Max", cost_of_sale=cost_of_sale)
 
     html = render_template(
         'cost_analysis.html',
@@ -797,13 +832,17 @@ def cost_analysis():
         graph_cost_cum=fig_cost_cum.to_html(full_html=False, include_plotlyjs='cdn'),
         graph_cpl_cum=fig_cpl_cum.to_html(full_html=False, include_plotlyjs=False),
         graph_cpl_rv=fig_cpl_rv.to_html(full_html=False, include_plotlyjs=False),
-        graph_fb_cpl_rv=fig_fb_cpl_rv.to_html(full_html=False, include_plotlyjs=False),
-        graph_pmax_cpl_rv=fig_pmax_cpl_rv.to_html(full_html=False, include_plotlyjs=False),
-        graph_combined_com=fig_combined_com.to_html(
-        full_html=False,
-        include_plotlyjs=False )
-    )
 
+        graph_fb_cost_cum=fig_fb_cost_cum.to_html(full_html=False, include_plotlyjs=False),
+        graph_fb_cpl_rv=fig_fb_cpl_rv.to_html(full_html=False, include_plotlyjs=False),
+
+        graph_pmax_cost_cum=fig_pmax_cost_cum.to_html(full_html=False, include_plotlyjs=False),
+        graph_pmax_cpl_rv=fig_pmax_cpl_rv.to_html(full_html=False, include_plotlyjs=False),
+
+        graph_mailer_cost_cum=fig_mailer_cost_cum.to_html(full_html=False, include_plotlyjs=False),
+
+        graph_combined_com=fig_combined_com.to_html(full_html=False, include_plotlyjs=False),
+    )
 
     resp = make_response(html)
     resp.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'

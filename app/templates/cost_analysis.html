@@ -1,29 +1,29 @@
 {% extends "index.html" %}
 
 {% block content %}
-<div class="container my-3">
+
 <!-- ================= HEADER ================= -->
-<div class="d-flex justify-content-between align-items-center mb-3">
-  <h5 class="mb-0" style="color:#004B87; font-weight:700;">WhatsApp Cost Analysis</h5>
+<div class="page-header">
+  <h5 class="page-title">Cost Analysis</h5>
   <div class="d-flex gap-2 align-items-center">
-    <a href="{{ url_for('data_dashboard') }}" class="btn btn-outline-primary btn-sm">Back to Dashboard</a>
+    <a href="{{ url_for('data_dashboard') }}" class="btn btn-outline-primary btn-sm">← Dashboard</a>
     <form method="post" class="mb-0">
       <input type="hidden" name="update_data" value="1">
       <button type="submit" class="btn btn-primary btn-sm">Update Data</button>
     </form>
   </div>
 </div>
-<div class="text-end mb-2">
-  <small class="text-muted" style="font-size:0.75rem;">Last Updated: {{ last_updated }}</small>
+<div class="text-end mb-3">
+  <span class="last-updated">Last Updated: {{ last_updated }}</span>
 </div>
 
 {% if refreshed %}
 <div class="alert alert-success py-2 px-3 mb-3">Data updated successfully.</div>
 {% endif %}
 
-<!-- ================= MAIN FORM ================= -->
+<!-- ================= FILTER FORM ================= -->
 <form method="post">
-
+<div class="filter-card">
 <div class="row g-3">
 
 {% set filters = [
@@ -41,15 +41,10 @@
       Edit
     </button>
   </div>
-
   <div id="chips-{{ id }}" class="chips-container"></div>
-
-  <!-- Hidden select for form submission -->
   <select id="{{ id }}" name="{{ id }}" class="d-none" multiple>
     {% for c in choices %}
-      <option value="{{ c }}" {% if selected and c in selected %}selected{% endif %}>
-        {{ c }}
-      </option>
+      <option value="{{ c }}" {% if selected and c in selected %}selected{% endif %}>{{ c }}</option>
     {% endfor %}
   </select>
 </div>
@@ -61,7 +56,7 @@
          class="form-control form-control-sm"
          placeholder="e.g. 134"
          value="{{ cost_of_sale if cost_of_sale else '' }}">
-  <small class="text-muted">Added to each Cost Per Lead value</small>
+  <small class="last-updated" style="font-size:0.72rem;">Added to each Cost Per Lead value</small>
 </div>
 
 <div class="col-12 text-end">
@@ -69,6 +64,7 @@
 </div>
 
 </div>
+</div><!-- /.filter-card -->
 
 <!-- ================= MODALS ================= -->
 {% macro filter_modal(id,title,choices,search_id,select_id) %}
@@ -108,19 +104,24 @@
 </form>
 
 <!-- ================= SUMMARY ================= -->
-<div class="alert alert-light border mt-3 small mb-3">
-  <b>Campaigns:</b> {{ selected_campaigns_display }} |
-  <b>Months:</b> {{ selected_months_display }} |
+<div class="summary-bar">
+  <b>Campaigns:</b> {{ selected_campaigns_display }} &nbsp;·&nbsp;
+  <b>Months:</b> {{ selected_months_display }} &nbsp;·&nbsp;
   <b>Branches:</b> {{ selected_branches_display }}
 </div>
 
 <!-- ================= WA GRAPHS ================= -->
-<h5 class="mt-4 mb-3" style="color:#004B87; font-weight:700;">WhatsApp Campaigns</h5>
+<div class="section-header">
+  <span class="section-badge badge-wa">WhatsApp</span>
+  <span class="section-line"></span>
+  <span class="section-label">CAMPAIGNS</span>
+</div>
+
 <div class="row g-4">
 {% for title,g in [
- ('Cost of Marketing',graph_cost_cum),
- ('Cumulative Cost Per Lead',graph_cpl_cum),
- ('Cost Per Lead vs RV Per Lead',graph_cpl_rv)
+ ('Total Cost of WhatsApp Campaigns', graph_cost_cum),
+ ('Cumulative Cost Per Lead', graph_cpl_cum),
+ ('Cost Per Lead vs RV Per Lead', graph_cpl_rv)
 ] %}
 {% if g %}
 <div class="col-12">
@@ -136,8 +137,23 @@
 </div>
 
 <!-- ================= FB GRAPHS ================= -->
-<h5 class="mt-5 mb-3" style="color:#004B87; font-weight:700;">FB Campaigns (Pan India)</h5>
+<div class="section-header">
+  <span class="section-badge badge-fb">Facebook</span>
+  <span class="section-line"></span>
+  <span class="section-label">PAN INDIA</span>
+</div>
+
 <div class="row g-4">
+{% if graph_fb_cost_cum %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-body">
+      <h6 class="mb-2">Total Cost of FB campaigns</h6>
+      {{ graph_fb_cost_cum|safe }}
+    </div>
+  </div>
+</div>
+{% endif %}
 {% if graph_fb_cpl_rv %}
 <div class="col-12">
   <div class="card">
@@ -151,8 +167,23 @@
 </div>
 
 <!-- ================= P-Max GRAPHS ================= -->
-<h5 class="mt-5 mb-3" style="color:#004B87; font-weight:700;">P-Max Campaigns (Pan India)</h5>
+<div class="section-header">
+  <span class="section-badge badge-pmax">P-Max</span>
+  <span class="section-line"></span>
+  <span class="section-label">PAN INDIA</span>
+</div>
+
 <div class="row g-4">
+{% if graph_pmax_cost_cum %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-body">
+      <h6 class="mb-2">Total Cost of P-Max Campaigns</h6>
+      {{ graph_pmax_cost_cum|safe }}
+    </div>
+  </div>
+</div>
+{% endif %}
 {% if graph_pmax_cpl_rv %}
 <div class="col-12">
   <div class="card">
@@ -165,15 +196,39 @@
 {% endif %}
 </div>
 
-<!-- COMBINED CURVE FOR PAN INDIA -->
+<!-- ================= MAILER GRAPHS ================= -->
+<div class="section-header">
+  <span class="section-badge badge-mailer">Mailer</span>
+  <span class="section-line"></span>
+  <span class="section-label">PAN INDIA</span>
+</div>
 
-<h5 class="mt-5 mb-3" style="color:#004B87; font-weight:700;">Marketing  Campaigns (Pan India)</h5>
 <div class="row g-4">
+{% if graph_mailer_cost_cum %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-body">
+      <h6 class="mb-2">Total Cost of Mailer Campaigns</h6>
+      {{ graph_mailer_cost_cum|safe }}
+    </div>
+  </div>
+</div>
+{% endif %}
+</div>
+
+<!-- ================= COMBINED ================= -->
+<div class="section-header">
+  <span class="section-badge badge-combined">Combined</span>
+  <span class="section-line"></span>
+  <span class="section-label">PAN INDIA</span>
+</div>
+
+<div class="row g-4 mb-5">
 {% if graph_combined_com %}
 <div class="col-12">
   <div class="card">
     <div class="card-body">
-      <h6 class="mb-2">Cost of marketing</h6>
+      <h6 class="mb-2">Cost of Marketing(%)</h6>
       {{ graph_combined_com|safe }}
     </div>
   </div>
@@ -181,85 +236,84 @@
 {% endif %}
 </div>
 
-</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
 function sync(id){
- const sel=document.getElementById(id);
- const selected=new Set([...sel.options].filter(o=>o.selected).map(o=>o.value));
- document.querySelectorAll(`#list-${id} .list-group-item`)
-  .forEach(b=>b.classList.toggle('active',selected.has(b.dataset.value)));
+  const sel = document.getElementById(id);
+  const selected = new Set([...sel.options].filter(o => o.selected).map(o => o.value));
+  document.querySelectorAll(`#list-${id} .list-group-item`)
+    .forEach(b => b.classList.toggle('active', selected.has(b.dataset.value)));
 }
 
 function render(id){
- const box=document.getElementById(`chips-${id}`);
- const sel=document.getElementById(id);
- box.innerHTML='';
- const selected=[...sel.options].filter(o=>o.selected);
+  const box = document.getElementById(`chips-${id}`);
+  const sel = document.getElementById(id);
+  box.innerHTML = '';
+  const selected = [...sel.options].filter(o => o.selected);
 
- if(!selected.length){
-   box.innerHTML='<span class="text-muted small">None Selected</span>';
-   return;
- }
+  if (!selected.length) {
+    box.innerHTML = '<span style="color:var(--text-3);font-size:0.78rem;">None selected</span>';
+    return;
+  }
 
- selected.forEach(o=>{
-  const chip=document.createElement('span');
-  chip.className='chip';
-  chip.innerHTML=o.text.trim()+` <button type="button" class="chip-close">&times;</button>`;
-  chip.querySelector('button').onclick=()=>{
-    o.selected=false;
+  selected.forEach(o => {
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.innerHTML = o.text.trim() + ` <button type="button" class="chip-close">&times;</button>`;
+    chip.querySelector('button').onclick = () => {
+      o.selected = false;
+      render(id);
+      sync(id);
+    };
+    box.appendChild(chip);
+  });
+}
+
+function setup(id, search){
+  const sel  = document.getElementById(id);
+  const list = document.getElementById(`list-${id}`);
+
+  list.onclick = e => {
+    const btn = e.target.closest('.list-group-item');
+    if (!btn) return;
+    const opt = [...sel.options].find(o => o.value === btn.dataset.value);
+    opt.selected = !opt.selected;
     render(id);
     sync(id);
   };
-  box.appendChild(chip);
- });
+
+  document.getElementById(search).oninput = e => {
+    const q = e.target.value.toLowerCase();
+    list.querySelectorAll('.list-group-item')
+      .forEach(b => b.style.display = b.textContent.toLowerCase().includes(q) ? '' : 'none');
+  };
+
+  document.querySelector(`[data-selectall="${id}"]`).onclick = () => {
+    [...sel.options].forEach(o => o.selected = true);
+    render(id);
+    sync(id);
+  };
+
+  document.querySelector(`[data-clearall="${id}"]`).onclick = () => {
+    [...sel.options].forEach(o => o.selected = false);
+    render(id);
+    sync(id);
+  };
 }
 
-function setup(id,search){
- const sel=document.getElementById(id);
- const list=document.getElementById(`list-${id}`);
-
- list.onclick=e=>{
-  const btn=e.target.closest('.list-group-item');
-  if(!btn) return;
-  const opt=[...sel.options].find(o=>o.value===btn.dataset.value);
-  opt.selected=!opt.selected;
-  render(id);
-  sync(id);
- };
-
- document.getElementById(search).oninput=e=>{
-  const q=e.target.value.toLowerCase();
-  list.querySelectorAll('.list-group-item')
-   .forEach(b=>b.style.display=b.textContent.toLowerCase().includes(q)?'':'none');
- };
-
- document.querySelector(`[data-selectall="${id}"]`).onclick=()=>{
-  [...sel.options].forEach(o=>o.selected=true);
-  render(id);
-  sync(id);
- };
-
- document.querySelector(`[data-clearall="${id}"]`).onclick=()=>{
-  [...sel.options].forEach(o=>o.selected=false);
-  render(id);
-  sync(id);
- };
-}
-
-document.addEventListener('DOMContentLoaded',()=>{
- const searchMap={
-   campaign_name:'search-campaign',
-   month:'search-month',
-   branch:'search-branch'
- };
- ['campaign_name','month','branch'].forEach(id=>{
-   setup(id,searchMap[id]);
-   render(id);
-   sync(id);
- });
+document.addEventListener('DOMContentLoaded', () => {
+  const searchMap = {
+    campaign_name: 'search-campaign',
+    month:         'search-month',
+    branch:        'search-branch'
+  };
+  ['campaign_name', 'month', 'branch'].forEach(id => {
+    setup(id, searchMap[id]);
+    render(id);
+    sync(id);
+  });
 });
 </script>
 {% endblock %}
