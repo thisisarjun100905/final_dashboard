@@ -67,7 +67,10 @@ dict_camp = {
     "Marketing Ad Now Hot | Email": 117,
     "MSME Educational Click | Email": 191,
     "MSME Myth Busters Open | Email": 193,
-    'Paid_Expired': 189
+    'Paid_Expired': 189,
+    'LBC' : 319,
+    'user feedback click' : 22,
+    'User feedback super hot' : 178
 }
 
 dict_camp_product = {
@@ -643,10 +646,10 @@ def data_dashboard():
             if n in MONTH_NAME_REVERSE
         ]
     else:
-        months_selected = month_choices_raw[:]   # ALL months
+        months_selected = month_choices_last4[:]   # last 4 months
         month_names_selected = [
             MONTH_NAME_MAP[m]
-            for m in month_choices_raw
+            for m in month_choices_last4
         ]
     branches_selected = request.values.getlist('branch')
 
