@@ -29,66 +29,12 @@ from app.filters import (
 from app.plots import make_monthly_line_bar, make_timeseries_figure
 from app.campaign import campaign_analysis
 from app.cost_analysis import cost_analysis
+from app.campaign_config import dict_camp, dict_camp_product
 
 # ---------------- Cache helpers (unchanged) ----------------
 _DATA_CACHE = {"dfs": None, "fetched_at": None}
 import os
 os.environ['OAUTHLIB_INSECURE_TRANSPORT'] = '1'
-dict_camp = {
-    "Whatsapp Performance Marketing": 160,
-    "WA Double Intent": 200,
-    "FB Digital Marketing Ad": 108,
-    "FB Digital Marketing FL": 159,
-    "FB Double Intent": 196,
-    "P-Max Hot": 111,
-    "P-Max Warm": 112,
-    "Competitor FOMO Click | WA": 258,
-    "Competitor FOMO Super | WA": 259,
-    "Category Surge Super | Email": 208,
-    "Category Surge Click | Email": 173,
-    "Category Surge Open | Email": 172,
-    "Seasonal Campaign SUPER | Email": 242,
-    "Seasonal Campaign Click | Email": 104,
-    "Seasonal Campaign Open | Email": 103,
-    "Marketing Pilot A | WA": 243,
-    "Marketing Pilot B | WA": 244,
-    "New Seasonal Spike | WA": 256,
-    "Customer Intent | WA": 257,
-    "Marketing Email | Super": 288,
-    "FB Advertise Warm": 285,
-    "FB Advertise Hot": 286,
-    "Offer Notification": 260,
-    "Introductory Price | WA": 233,
-    "G Double Intent Hot": 198,
-    "G Double Intent Warm": 199,
-    "Double Intent Offer | WA": 197,
-    "Testimonial Click | Email": 240,
-    "Performance Marketing JDA | WA": 261,
-    "Marketing Ad Now Hot | Email": 117,
-    "MSME Educational Click | Email": 191,
-    "MSME Myth Busters Open | Email": 193,
-    'Paid_Expired': 189,
-    'LBC' : 319,
-    'user feedback click' : 22,
-    'User feedback super hot' : 178
-}
-
-dict_camp_product = {
-    "JD Biz": 80,
-    "Jd Biz Notification": 190,
-    "JD Biz Super Hot": 149,
-    "JD Biz Claimed Click | Email": 150,
-    "Edit Listing Owner": 3,
-    "Leads Section": 77,
-    "New Free Listing Hot": 97,
-    "Free Leads Super Hot | WA": 184,
-    "Free Leads Click | WA": 187,
-    "Free Leads High Intent": 282,
-    "New Advertise Hot": 101,
-    "New Advertise Warm": 102,
-    "User Feedback Super | Email": 178,
-    "User Feedback Click | Email": 22
-}
 
 
 # Croos verification of campaign name to ID mapping and vice versa

@@ -28,7 +28,59 @@ FB_CAMPAIGN_NAMES = [
 PMAX_CAMPAIGN_IDS = [111, 112]
 
 # Mailer campaign IDs
-MAILER_CAMPAIGN_IDS = [208 , 242 , 288]
+MAILER_CAMPAIGN_IDS = [208, 242, 288]
+
+# --------------- Campaign ID ↔ table-name maps (source of truth) ---------------
+# Keys are the campaign IDs used in conversion/RV data.
+# Values are the exact campaign_name strings stored in the WA / Mailer cost tables.
+# Two IDs map to 'campaign1' — the reverse map handles that automatically.
+
+_WA_ID_TO_TABLE_NAME = {
+    258: 'fomo',
+    243: 'customoffer',
+    160: 'campaign1',
+    200: 'campaign1',
+    256: 'seasonal',
+    244: 'pilotb',
+}
+
+_MAILER_ID_TO_TABLE_NAME = {
+    208: 'category_surge_mailer',
+    288: 'mailer_non_seasonal',
+    242: 'mailer_seasonal',
+}
+
+
+def _invert_id_map(id_to_name: dict) -> dict:
+    """Build lowercase name → [campaign_ids] from an id → name map."""
+    rev: dict = {}
+    for camp_id, name in id_to_name.items():
+        rev.setdefault(name.strip().lower(), []).append(camp_id)
+    return rev
+
+
+_WA_TABLE_TO_IDS    = _invert_id_map(_WA_ID_TO_TABLE_NAME)    # e.g. 'campaign1' → [160, 200]
+_MAILER_TABLE_TO_IDS = _invert_id_map(_MAILER_ID_TO_TABLE_NAME)
+
+
+def _resolve_rv_ids(campaigns_selected: list, table_to_ids: dict, fallback: list) -> list:
+    """
+    Map cost-table campaign names → conversion campaign IDs.
+
+    campaigns_selected  – names chosen in the cost-analysis dropdown
+                          (these ARE the strings stored in WA / Mailer tables)
+    table_to_ids        – reverse map built from _WA_TABLE_TO_IDS or _MAILER_TABLE_TO_IDS
+    fallback            – IDs to return when nothing matches (e.g. all-channel default)
+    """
+    if not campaigns_selected:
+        return fallback
+    resolved = []
+    for name in campaigns_selected:
+        resolved.extend(table_to_ids.get(str(name).strip().lower(), []))
+    # Deduplicate while preserving order
+    seen: set = set()
+    unique = [i for i in resolved if not (i in seen or seen.add(i))]
+    return unique if unique else fallback
 
 
 # --------------- Campaign name normalisation ---------------
@@ -118,7 +170,6 @@ def _fetch_wa_data(force_update=False):
             df['branch'] = df['branch'].astype(str).str.strip()
         if 'campaign_name' in df.columns:
             df['campaign_name'] = df['campaign_name'].astype(str).str.strip()
-            df['campaign_name'] = df['campaign_name'].replace('customoffer', 'marketing pilot A')
             df['campaign_name'] = df['campaign_name'].map(_normalize_campaign_name)
         _WA_CACHE["df"] = df
         _WA_CACHE["fetched_at"] = datetime.now()
@@ -685,8 +736,15 @@ def cost_analysis():
     }
     MONTH_NAME_REVERSE = {v: k for k, v in MONTH_NAME_MAP.items()}
 
-    current_month  = datetime.now().month
-    allowed_months = [(current_month - i - 1) % 12 + 1 for i in range(3, -1, -1)]
+    # Derive available months from WA data (same DB-first approach as main dashboard)
+    current_month = datetime.now().month
+    raw_months_in_db = sorted(df['month'].dropna().unique().astype(int).tolist()) if 'month' in df.columns else []
+    if raw_months_in_db:
+        months_sorted = sorted(raw_months_in_db, key=lambda m: (m - current_month - 1) % 12)
+        allowed_months = months_sorted[-4:] if len(months_sorted) > 4 else months_sorted
+    else:
+        # fallback to calendar arithmetic if DB has no data
+        allowed_months = [(current_month - i - 1) % 12 + 1 for i in range(3, -1, -1)]
     month_choices  = [MONTH_NAME_MAP[m] for m in allowed_months]
 
     def _names(src):
@@ -750,7 +808,7 @@ def cost_analysis():
             mailer_for_com = mailer_for_com[mailer_for_com['campaign_name'].isin(com_sel)]
 
     # === RV DATA ===
-    RV_CAMPAIGN_IDS      = [200, 160, 256, 258, 243, 244, 233]
+    RV_CAMPAIGN_IDS       = [160, 200, 233, 243, 244, 256, 257, 258, 259, 261, 197, 319]
     combined_rv_campaigns = RV_CAMPAIGN_IDS + FB_CAMPAIGN_IDS + PMAX_CAMPAIGN_IDS + MAILER_CAMPAIGN_IDS
 
     from app.routes import _get_data, _DATA_CACHE, _standardize_columns, _prepare_df
@@ -758,22 +816,26 @@ def cost_analysis():
     conversion_data = dfs['conversion']
     rv_deal_closed  = dfs['conversion_deal']
 
-    filtered_rv_lead      = filter_rv_data(conversion_data, RV_CAMPAIGN_IDS, months_selected, branches_selected)
+    # --- Resolve WA RV campaign IDs ---
+    # Use the explicit _WA_TABLE_TO_IDS map (name → [ids]).
+    # campaigns_selected contains the exact campaign_name strings from the
+    # WA cost table, so the lookup is direct — no fragile string matching.
+    wa_rv_ids = _resolve_rv_ids(campaigns_selected, _WA_TABLE_TO_IDS, RV_CAMPAIGN_IDS)
+
+    filtered_rv_lead      = filter_rv_data(conversion_data, wa_rv_ids, months_selected, branches_selected)
     filtered_rv_lead_rate = filter_rv_rate(filtered_rv_lead, 'RV_Lead_Rate')
     filtered_rv_lead_rate = _prepare_df(filtered_rv_lead_rate)
 
-    # COM RV: include only IDs for the sources that have a selected campaign
+    # COM RV: use the explicit maps so only the selected campaign's IDs are
+    # included, not the entire channel bucket.
     if campaigns_selected:
-        sel_set    = set(campaigns_selected)
         com_rv_ids = []
-        if sel_set & wa_names:
-            com_rv_ids.extend(RV_CAMPAIGN_IDS)
-        if sel_set & fb_names:
+        com_rv_ids.extend(_resolve_rv_ids(campaigns_selected, _WA_TABLE_TO_IDS,    []))
+        com_rv_ids.extend(_resolve_rv_ids(campaigns_selected, _MAILER_TABLE_TO_IDS, []))
+        if set(campaigns_selected) & fb_names:
             com_rv_ids.extend(FB_CAMPAIGN_IDS)
-        if sel_set & pmax_names:
+        if set(campaigns_selected) & pmax_names:
             com_rv_ids.extend(PMAX_CAMPAIGN_IDS)
-        if sel_set & mailer_names:
-            com_rv_ids.extend(MAILER_CAMPAIGN_IDS)
         if not com_rv_ids:
             com_rv_ids = combined_rv_campaigns
     else:
