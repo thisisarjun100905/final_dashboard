@@ -7,9 +7,18 @@ def make_timeseries_figure(
     months: list[int],
     ycol: str,
     title: str,
-    ytitle: str
+    ytitle: str,
+    value_type: str = "number"
 ) -> go.Figure:
-    """Build a multi-month line chart for the given ycol."""
+    """Build a multi-month line chart for the given ycol.
+
+    value_type controls hover + axis formatting:
+      "rupee"   -> "(Rs)" axis label, comma-grouped values (no "M"/Millions
+                   abbreviation) on both ticks and hover.
+      "percent" -> "(%)" axis label, values shown with a "%" suffix and 2
+                   decimals on hover.
+      "number"  -> left untouched (plain counts like leads/appointments/deals).
+    """
 
     fig = go.Figure()
 
@@ -67,9 +76,20 @@ def make_timeseries_figure(
             marker=dict(color=color_palette[0], size=6)
         ))
 
+    # ---- Hover / axis formatting by value type ----
+    yaxis_opts = dict(title=ytitle)
+    if value_type == "rupee":
+        yaxis_opts["title"] = f"{ytitle} (Rs)"
+        yaxis_opts["tickformat"] = ",.0f"   # commas, no "M"/Millions abbreviation
+        yaxis_opts["hoverformat"] = ",.0f"
+    elif value_type == "percent":
+        yaxis_opts["title"] = f"{ytitle} (%)"
+        yaxis_opts["ticksuffix"] = "%"      # appended to hover values too
+        yaxis_opts["hoverformat"] = ".2f"
+
     fig.update_layout(
         xaxis_title="Day of Month" if 'day' in df.columns else "Index",
-        yaxis_title=ytitle,
+        yaxis=yaxis_opts,
 
         legend=dict(
             orientation="h",

@@ -65,6 +65,27 @@ _PMAX_ID_TO_TABLE_NAME = {
     112: 'Pmax',
 }
 
+# --------------- Campaign display names (presentation only) ---------------
+# Keys are the raw campaign_name strings stored in the cost tables (and used
+# as the <option value> + filter/RV-bridge key). Values are the friendly
+# labels shown to users in the dropdown, chips and summary bar.
+# Renaming here is display-only — the underlying value the form submits is
+# unchanged, so filtering and the name→RV-ID maps keep working.
+CAMPAIGN_DISPLAY_NAMES = {
+    'campaign1':           'WA Marketing',
+    'customoffer':         'Pilot A',
+    'pilotb':              'Pilot B',
+    'seasonal':            'Seasonal spike | WA',
+    'mailer_non_seasonal': 'Marketing Email | Super',
+    'mailer_seasonal':     'Seasonal Campaign Super | Email',
+    'fomo':                'FOMO',
+}
+
+
+def _display_name(name):
+    """Friendly label for a raw campaign_name (identity if unmapped)."""
+    return CAMPAIGN_DISPLAY_NAMES.get(str(name), str(name))
+
 
 def _invert_id_map(id_to_name: dict) -> dict:
     """Build lowercase name → [campaign_ids] from an id → name map."""
@@ -306,7 +327,7 @@ def _make_cumulative_line_chart(df, ycol, title, ytitle, months):
 
     fig.update_layout(
         xaxis_title="Day of Month",
-        yaxis_title=ytitle,
+        yaxis=dict(title=ytitle, hoverformat=",.0f"),
         legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5),
         showlegend=True,
         margin=dict(l=50, r=30, t=60, b=90),
@@ -350,10 +371,10 @@ def _make_cumulative_cpl_chart(df, months, cost_of_sale=0):
                     marker=dict(color=color, size=6)
                 ))
 
-    cpl_label = "Cost / Lead" if not cost_of_sale else f"Cost / Lead (+ {cost_of_sale:g} Cost of Sale)"
+    cpl_label = "Cost / Lead (Rs)" if not cost_of_sale else f"Cost / Lead (+ {cost_of_sale:g} Cost of Sale) (Rs)"
     fig.update_layout(
         xaxis_title="Day of Month",
-        yaxis_title=cpl_label,
+        yaxis=dict(title=cpl_label, hoverformat=",.2f"),
         legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5),
         showlegend=True,
         margin=dict(l=50, r=30, t=60, b=90),
@@ -439,7 +460,7 @@ def _make_cpl_rv_combined_chart(wa_df, rv_df, months, cost_of_sale=0):
 
     fig.update_layout(
         xaxis_title="Day of Month",
-        yaxis_title="Value",
+        yaxis=dict(title="Value (Rs)", hoverformat=",.2f"),
         legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5),
         showlegend=True,
         margin=dict(l=50, r=30, t=60, b=90),
@@ -526,7 +547,7 @@ def _make_meta_cpl_rv_combined_chart(cost_df, rv_df, months, label="FB", cost_of
 
     fig.update_layout(
         xaxis_title="Day of Month",
-        yaxis_title="Value",
+        yaxis=dict(title="Value (Rs)", hoverformat=",.2f"),
         legend=dict(orientation="h", yanchor="top", y=-0.25, xanchor="center", x=0.5),
         showlegend=True,
         margin=dict(l=50, r=30, t=60, b=90),
@@ -740,13 +761,14 @@ def _make_combined_com_curve(
             marker=dict(
                 color=color,
                 size=6
-            )
+            ),
+            hovertemplate="(%{x}, %{y:.2f}%)<extra></extra>"
         ))
 
     fig.update_layout(
-        title="Combined COM Curve",
+        title="ALL Marketing Campaign COM",
         xaxis_title="Day of Month",
-        yaxis_title="Cost / RV",
+        yaxis_title="Cost of Marketing (%)",
         legend=dict(
             orientation="h",
             yanchor="top",
@@ -839,7 +861,7 @@ def cost_analysis():
         month_names_selected = [MONTH_NAME_MAP[m] for m in months_selected]
 
     # === DISPLAY STRINGS ===
-    selected_campaigns_display = ", ".join(campaigns_selected)   if campaigns_selected   else "None"
+    selected_campaigns_display = ", ".join(_display_name(c) for c in campaigns_selected) if campaigns_selected else "None"
     selected_months_display    = ", ".join(month_names_selected) if month_names_selected else "None"
     selected_branches_display  = ", ".join(branches_selected)    if branches_selected    else "None"
 
@@ -904,7 +926,7 @@ def cost_analysis():
     combined_rv = _prepare_df(combined_rv)
 
     # === WA CHARTS ===
-    fig_cost_cum = _make_cumulative_line_chart(filtered, 'cost', "Cost of Marketing", "Cost of Marketing", months_selected)
+    fig_cost_cum = _make_cumulative_line_chart(filtered, 'cost', "Cost of Marketing", "Total Cost (Rs)", months_selected)
     fig_cpl_cum  = _make_cumulative_cpl_chart(filtered, months_selected, cost_of_sale)
     fig_cpl_rv   = _make_cpl_rv_combined_chart(filtered, filtered_rv_lead_rate, months_selected, cost_of_sale)
 
@@ -912,18 +934,18 @@ def cost_analysis():
     fb_rv_lead      = filter_rv_data(conversion_data, FB_CAMPAIGN_IDS, months_selected, branches=None)
     fb_rv_lead_rate = filter_rv_rate(fb_rv_lead, 'RV_Lead_Rate')
     fb_rv_lead_rate = _prepare_df(fb_rv_lead_rate)
-    fig_fb_cost_cum = _make_cumulative_line_chart(fb_filtered, 'amount', "FB Cost of Marketing", "Cost of Marketing", months_selected)
+    fig_fb_cost_cum = _make_cumulative_line_chart(fb_filtered, 'amount', "FB Cost of Marketing", "Total Cost (Rs)", months_selected)
     fig_fb_cpl_rv   = _make_meta_cpl_rv_combined_chart(fb_filtered, fb_rv_lead_rate, months_selected, label="FB", cost_of_sale=cost_of_sale)
 
     # === P-MAX CHARTS ===
     pmax_rv_lead      = filter_rv_data(conversion_data, PMAX_CAMPAIGN_IDS, months_selected, branches=None)
     pmax_rv_lead_rate = filter_rv_rate(pmax_rv_lead, 'RV_Lead_Rate')
     pmax_rv_lead_rate = _prepare_df(pmax_rv_lead_rate)
-    fig_pmax_cost_cum = _make_cumulative_line_chart(pmax_filtered, 'amount', "P-Max Cost of Marketing", "Cost of Marketing", months_selected)
+    fig_pmax_cost_cum = _make_cumulative_line_chart(pmax_filtered, 'amount', "P-Max Cost of Marketing", "Total Cost (Rs)", months_selected)
     fig_pmax_cpl_rv   = _make_meta_cpl_rv_combined_chart(pmax_filtered, pmax_rv_lead_rate, months_selected, label="P-Max", cost_of_sale=cost_of_sale)
 
     # === MAILER CHARTS ===
-    fig_mailer_cost_cum = _make_cumulative_line_chart(mailer_filtered, 'cost', "Mailer Cost of Marketing", "Cost of Marketing", months_selected)
+    fig_mailer_cost_cum = _make_cumulative_line_chart(mailer_filtered, 'cost', "Mailer Cost of Marketing", "Total Cost (Rs)", months_selected)
 
     # === COMBINED COM CHART ===
     fig_combined_com = _make_combined_com_curve(
@@ -938,6 +960,7 @@ def cost_analysis():
 
         campaign_choices=campaign_choices,
         campaigns_selected=campaigns_selected,
+        display_names=CAMPAIGN_DISPLAY_NAMES,
 
         month_choices=month_choices,
         month_selected=month_names_selected,

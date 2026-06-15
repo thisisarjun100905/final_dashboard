@@ -44,7 +44,7 @@
   <div id="chips-{{ id }}" class="chips-container"></div>
   <select id="{{ id }}" name="{{ id }}" class="d-none" multiple>
     {% for c in choices %}
-      <option value="{{ c }}" {% if selected and c in selected %}selected{% endif %}>{{ c }}</option>
+      <option value="{{ c }}" {% if selected and c in selected %}selected{% endif %}>{{ display_names.get(c, c) if display_names else c }}</option>
     {% endfor %}
   </select>
 </div>
@@ -85,7 +85,7 @@
         </div>
         <div id="list-{{ select_id }}" class="list-group list-scroll">
           {% for c in choices %}
-          <button type="button" class="list-group-item list-group-item-action" data-value="{{ c }}">{{ c }}</button>
+          <button type="button" class="list-group-item list-group-item-action" data-value="{{ c }}">{{ display_names.get(c, c) if display_names else c }}</button>
           {% endfor %}
         </div>
       </div>
