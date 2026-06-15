@@ -50,6 +50,21 @@ _MAILER_ID_TO_TABLE_NAME = {
     242: 'mailer_seasonal',
 }
 
+# All FB and P-Max campaign IDs share a single table name each —
+# selecting 'FB' or 'Pmax' from the dropdown resolves to all IDs in that channel.
+_FB_ID_TO_TABLE_NAME = {
+    108: 'FB',
+    159: 'FB',
+    196: 'FB',
+    285: 'FB',
+    286: 'FB',
+}
+
+_PMAX_ID_TO_TABLE_NAME = {
+    111: 'Pmax',
+    112: 'Pmax',
+}
+
 
 def _invert_id_map(id_to_name: dict) -> dict:
     """Build lowercase name → [campaign_ids] from an id → name map."""
@@ -59,8 +74,34 @@ def _invert_id_map(id_to_name: dict) -> dict:
     return rev
 
 
-_WA_TABLE_TO_IDS    = _invert_id_map(_WA_ID_TO_TABLE_NAME)    # e.g. 'campaign1' → [160, 200]
+_WA_TABLE_TO_IDS     = _invert_id_map(_WA_ID_TO_TABLE_NAME)     # 'campaign1' → [160, 200], etc.
 _MAILER_TABLE_TO_IDS = _invert_id_map(_MAILER_ID_TO_TABLE_NAME)
+_FB_TABLE_TO_IDS     = _invert_id_map(_FB_ID_TO_TABLE_NAME)      # 'fb'    → [108, 159, 196, 285, 286]
+_PMAX_TABLE_TO_IDS   = _invert_id_map(_PMAX_ID_TO_TABLE_NAME)    # 'pmax'  → [111, 112]
+
+# Lowercase set of every campaign name that can be bridged to RV campaign IDs.
+# The Mailer cost table also stores ~110 stray numeric campaign IDs that have
+# no RV mapping — selecting one would yield charts with no matching RV data.
+# We use this set to keep ONLY bridgeable names in the dropdown.
+_KNOWN_NAME_KEYS = (
+    set(_WA_TABLE_TO_IDS)
+    | set(_MAILER_TABLE_TO_IDS)
+    | set(_FB_TABLE_TO_IDS)
+    | set(_PMAX_TABLE_TO_IDS)
+)
+
+# RV is only counted for campaigns that actually have a cost entry — i.e. the
+# campaign IDs that appear as KEYS in the cost-page maps (and therefore as names
+# in the filter dropdown). These are the canonical denominators for COM, so the
+# RV total always matches the campaigns whose cost we are summing. We deliberately
+# do NOT include conversion-only RV campaign IDs that have no cost.
+_WA_RV_IDS_WITH_COST  = list(_WA_ID_TO_TABLE_NAME.keys())      # [258, 243, 160, 200, 256, 244]
+_ALL_RV_IDS_WITH_COST = (
+    list(_WA_ID_TO_TABLE_NAME.keys())
+    + list(_MAILER_ID_TO_TABLE_NAME.keys())
+    + list(_FB_ID_TO_TABLE_NAME.keys())
+    + list(_PMAX_ID_TO_TABLE_NAME.keys())
+)
 
 
 def _resolve_rv_ids(campaigns_selected: list, table_to_ids: dict, fallback: list) -> list:
@@ -114,9 +155,10 @@ def _fetch_fb_data(force_update=False):
         for col in ['amount', 'hot_leads']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
-        if 'campaign_name' in df.columns:
-            df['campaign_name'] = df['campaign_name'].astype(str).str.strip()
-            df['campaign_name'] = df['campaign_name'].map(_normalize_campaign_name)
+        # All rows in the FB cost table belong to the single "FB" channel pool;
+        # the raw campaign_name column contains numeric FB Ads IDs which are
+        # meaningless for the dropdown and break the WA/Mailer name→ID bridge.
+        df['campaign_name'] = 'FB'
         _FB_CACHE["df"] = df
         _FB_CACHE["fetched_at"] = datetime.now()
     return _FB_CACHE["df"]
@@ -138,9 +180,8 @@ def _fetch_pmax_data(force_update=False):
         for col in ['amount', 'hot_leads']:
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors='coerce')
-        if 'campaign_name' in df.columns:
-            df['campaign_name'] = df['campaign_name'].astype(str).str.strip()
-            df['campaign_name'] = df['campaign_name'].map(_normalize_campaign_name)
+        # Same as FB: all Pmax rows belong to one channel pool.
+        df['campaign_name'] = 'Pmax'
         _PMAX_CACHE["df"] = df
         _PMAX_CACHE["fetched_at"] = datetime.now()
     return _PMAX_CACHE["df"]
@@ -612,6 +653,12 @@ def _make_combined_com_curve(
             .sort_values('day')
         )
 
+        # Last day that actually has cost data. RV data usually lands for later
+        # days than cost (e.g. cost updated till the 11th, RV till the 14th).
+        # The outer merge below would otherwise create COM points for days that
+        # have no cost — so we cap the curve at this day.
+        last_cost_day = int(combined_cost['day'].max())
+
         # ---------------- RV ----------------
         rdf = rv_df[rv_df['month'] == m]
 
@@ -659,7 +706,13 @@ def _make_combined_com_curve(
         # final_df['com'] = final_df['com'] * 100
 
         # ---------------- STATIC CURVE ----------------
-        max_day = int(final_df['day'].max())
+        # Cap at the last day with real cost data so the curve stops where cost
+        # stops — no COM for days that only have RV (e.g. the 12th–14th when cost
+        # is updated till the 11th).
+        final_df = final_df[final_df['day'] <= last_cost_day]
+        if final_df.empty:
+            continue
+        max_day = last_cost_day
 
         all_days = pd.DataFrame({
             'day': range(1, max_day + 1)
@@ -755,8 +808,14 @@ def cost_analysis():
     pmax_names   = _names(pmax_df)
     mailer_names = _names(mailer_df)
 
-    # Single unified campaign list covering all 4 sources
-    campaign_choices = sorted(wa_names | fb_names | pmax_names | mailer_names)
+    # Single unified campaign list covering all 4 sources, restricted to names
+    # that bridge to RV campaign IDs. This drops the stray numeric campaign IDs
+    # stored in the Mailer cost table, so every dropdown option produces correct
+    # metrics with no caveats.
+    all_names = wa_names | fb_names | pmax_names | mailer_names
+    campaign_choices = sorted(
+        n for n in all_names if str(n).strip().lower() in _KNOWN_NAME_KEYS
+    )
 
     # === READ FILTERS ===
     if is_filters_click:
@@ -791,26 +850,28 @@ def cost_analysis():
     mailer_filtered = mailer_df[mailer_df['month'].isin(months_selected)].copy() if months_selected else mailer_df.copy()
 
     # === FILTER DATA FOR COM CHART (month + COM campaign, Pan India) ===
+    # "No selection" means ALL bridgeable campaigns. Using campaign_choices as the
+    # default makes the empty-selection path identical to explicitly selecting every
+    # campaign — same cost numerator, same RV denominator, same COM. It also drops
+    # the 110 stray numeric Mailer campaigns (which have no RV bridge) from the cost.
+    com_campaigns = campaigns_selected if campaigns_selected else campaign_choices
+
     wa_for_com     = df[df['month'].isin(months_selected)].copy()          if months_selected else df.copy()
     fb_for_com     = fb_filtered.copy()
     pmax_for_com   = pmax_filtered.copy()
     mailer_for_com = mailer_filtered.copy()
 
-    if campaigns_selected:
-        com_sel = set(campaigns_selected)
-        if 'campaign_name' in wa_for_com.columns:
-            wa_for_com = wa_for_com[wa_for_com['campaign_name'].isin(com_sel)]
-        if 'campaign_name' in fb_for_com.columns:
-            fb_for_com = fb_for_com[fb_for_com['campaign_name'].isin(com_sel)]
-        if 'campaign_name' in pmax_for_com.columns:
-            pmax_for_com = pmax_for_com[pmax_for_com['campaign_name'].isin(com_sel)]
-        if 'campaign_name' in mailer_for_com.columns:
-            mailer_for_com = mailer_for_com[mailer_for_com['campaign_name'].isin(com_sel)]
+    com_sel = set(com_campaigns)
+    if 'campaign_name' in wa_for_com.columns:
+        wa_for_com = wa_for_com[wa_for_com['campaign_name'].isin(com_sel)]
+    if 'campaign_name' in fb_for_com.columns:
+        fb_for_com = fb_for_com[fb_for_com['campaign_name'].isin(com_sel)]
+    if 'campaign_name' in pmax_for_com.columns:
+        pmax_for_com = pmax_for_com[pmax_for_com['campaign_name'].isin(com_sel)]
+    if 'campaign_name' in mailer_for_com.columns:
+        mailer_for_com = mailer_for_com[mailer_for_com['campaign_name'].isin(com_sel)]
 
     # === RV DATA ===
-    RV_CAMPAIGN_IDS       = [160, 200, 233, 243, 244, 256, 257, 258, 259, 261, 197, 319]
-    combined_rv_campaigns = RV_CAMPAIGN_IDS + FB_CAMPAIGN_IDS + PMAX_CAMPAIGN_IDS + MAILER_CAMPAIGN_IDS
-
     from app.routes import _get_data, _DATA_CACHE, _standardize_columns, _prepare_df
     dfs             = _get_data(force_update=is_update_click)
     conversion_data = dfs['conversion']
@@ -820,26 +881,24 @@ def cost_analysis():
     # Use the explicit _WA_TABLE_TO_IDS map (name → [ids]).
     # campaigns_selected contains the exact campaign_name strings from the
     # WA cost table, so the lookup is direct — no fragile string matching.
-    wa_rv_ids = _resolve_rv_ids(campaigns_selected, _WA_TABLE_TO_IDS, RV_CAMPAIGN_IDS)
+    wa_rv_ids = _resolve_rv_ids(campaigns_selected, _WA_TABLE_TO_IDS, _WA_RV_IDS_WITH_COST)
 
     filtered_rv_lead      = filter_rv_data(conversion_data, wa_rv_ids, months_selected, branches_selected)
     filtered_rv_lead_rate = filter_rv_rate(filtered_rv_lead, 'RV_Lead_Rate')
     filtered_rv_lead_rate = _prepare_df(filtered_rv_lead_rate)
 
-    # COM RV: use the explicit maps so only the selected campaign's IDs are
-    # included, not the entire channel bucket.
-    if campaigns_selected:
-        com_rv_ids = []
-        com_rv_ids.extend(_resolve_rv_ids(campaigns_selected, _WA_TABLE_TO_IDS,    []))
-        com_rv_ids.extend(_resolve_rv_ids(campaigns_selected, _MAILER_TABLE_TO_IDS, []))
-        if set(campaigns_selected) & fb_names:
-            com_rv_ids.extend(FB_CAMPAIGN_IDS)
-        if set(campaigns_selected) & pmax_names:
-            com_rv_ids.extend(PMAX_CAMPAIGN_IDS)
-        if not com_rv_ids:
-            com_rv_ids = combined_rv_campaigns
-    else:
-        com_rv_ids = combined_rv_campaigns
+    # COM RV: resolve IDs for every channel via the explicit maps, using the SAME
+    # campaign set as the cost numerator (com_campaigns). This keeps the RV
+    # denominator perfectly matched to the cost — only campaigns with a real
+    # name→ID bridge contribute, so the empty-selection default and an explicit
+    # "select all" produce identical COM values.
+    com_rv_ids = []
+    com_rv_ids.extend(_resolve_rv_ids(com_campaigns, _WA_TABLE_TO_IDS,     []))
+    com_rv_ids.extend(_resolve_rv_ids(com_campaigns, _MAILER_TABLE_TO_IDS, []))
+    com_rv_ids.extend(_resolve_rv_ids(com_campaigns, _FB_TABLE_TO_IDS,     []))
+    com_rv_ids.extend(_resolve_rv_ids(com_campaigns, _PMAX_TABLE_TO_IDS,   []))
+    if not com_rv_ids:
+        com_rv_ids = _ALL_RV_IDS_WITH_COST
 
     combined_rv = filter_rv_data_closed(rv_deal_closed, com_rv_ids, months_selected, branches=None)
     combined_rv = _prepare_df(combined_rv)
@@ -891,7 +950,7 @@ def cost_analysis():
         selected_branches_display=selected_branches_display,
         cost_of_sale=cost_of_sale,
 
-        graph_cost_cum=fig_cost_cum.to_html(full_html=False, include_plotlyjs='cdn'),
+        graph_cost_cum=fig_cost_cum.to_html(full_html=False, include_plotlyjs=False),
         graph_cpl_cum=fig_cpl_cum.to_html(full_html=False, include_plotlyjs=False),
         graph_cpl_rv=fig_cpl_rv.to_html(full_html=False, include_plotlyjs=False),
 
@@ -903,7 +962,8 @@ def cost_analysis():
 
         graph_mailer_cost_cum=fig_mailer_cost_cum.to_html(full_html=False, include_plotlyjs=False),
 
-        graph_combined_com=fig_combined_com.to_html(full_html=False, include_plotlyjs=False),
+        # COM curve renders first on the page now, so it must load Plotly.js (cdn).
+        graph_combined_com=fig_combined_com.to_html(full_html=False, include_plotlyjs='cdn'),
     )
 
     resp = make_response(html)

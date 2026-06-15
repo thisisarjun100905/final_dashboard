@@ -110,6 +110,26 @@
   <b>Branches:</b> {{ selected_branches_display }}
 </div>
 
+<!-- ================= COMBINED COM (TOP) ================= -->
+<div class="section-header">
+  <span class="section-badge badge-combined">Combined</span>
+  <span class="section-line"></span>
+  <span class="section-label">PAN INDIA</span>
+</div>
+
+<div class="row g-4 mb-4">
+{% if graph_combined_com %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-body">
+      <h6 class="mb-2">Cost of Marketing(%)</h6>
+      {{ graph_combined_com|safe }}
+    </div>
+  </div>
+</div>
+{% endif %}
+</div>
+
 <!-- ================= WA GRAPHS ================= -->
 <div class="section-header">
   <span class="section-badge badge-wa">WhatsApp</span>
@@ -120,8 +140,8 @@
 <div class="row g-4">
 {% for title,g in [
  ('Total Cost of WhatsApp Campaigns', graph_cost_cum),
- ('Cumulative Cost Per Lead', graph_cpl_cum),
- ('Cost Per Lead vs RV Per Lead', graph_cpl_rv)
+ ('Cumulative Cost Per Lead(WA Campaigns)', graph_cpl_cum),
+ ('Cost Per Lead vs RV Per Lead(WA Campaigns)', graph_cpl_rv)
 ] %}
 {% if g %}
 <div class="col-12">
@@ -210,26 +230,6 @@
     <div class="card-body">
       <h6 class="mb-2">Total Cost of Mailer Campaigns</h6>
       {{ graph_mailer_cost_cum|safe }}
-    </div>
-  </div>
-</div>
-{% endif %}
-</div>
-
-<!-- ================= COMBINED ================= -->
-<div class="section-header">
-  <span class="section-badge badge-combined">Combined</span>
-  <span class="section-line"></span>
-  <span class="section-label">PAN INDIA</span>
-</div>
-
-<div class="row g-4 mb-5">
-{% if graph_combined_com %}
-<div class="col-12">
-  <div class="card">
-    <div class="card-body">
-      <h6 class="mb-2">Cost of Marketing(%)</h6>
-      {{ graph_combined_com|safe }}
     </div>
   </div>
 </div>
