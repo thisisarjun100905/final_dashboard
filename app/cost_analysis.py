@@ -6,6 +6,7 @@ from datetime import datetime
 from app.data_fetcher import fetch_table
 from app.connection import create_conn_240
 from app.filters import filter_rv_data, filter_rv_rate , filter_rv_data_closed
+from app.plots import hover_kwargs
 
 
 # --------------- Cache ---------------
@@ -317,12 +318,14 @@ def _make_cumulative_line_chart(df, ycol, title, ytitle, months):
                 day_agg = mdf.groupby('day')[ycol].sum().reset_index().sort_values('day')
                 day_agg['cumulative'] = day_agg[ycol].cumsum()
                 color = color_palette[idx % len(color_palette)]
+                month_label = MONTH_NAME.get(m, f"Month {m}")
                 fig.add_trace(go.Scatter(
                     x=day_agg['day'], y=day_agg['cumulative'],
                     mode='lines+markers',
-                    name=MONTH_NAME.get(m, f"Month {m}"),
+                    name=month_label,
                     line=dict(color=color, width=2),
-                    marker=dict(color=color, size=6)
+                    marker=dict(color=color, size=6),
+                    **hover_kwargs(day_agg['cumulative'], month_label, "rupee", 0)
                 ))
 
     fig.update_layout(
@@ -363,12 +366,14 @@ def _make_cumulative_cpl_chart(df, months, cost_of_sale=0):
                 if cost_of_sale:
                     day_agg['cum_cpl'] = day_agg['cum_cpl'] + cost_of_sale
                 color = color_palette[idx % len(color_palette)]
+                month_label = MONTH_NAME.get(m, f"Month {m}")
                 fig.add_trace(go.Scatter(
                     x=day_agg['day'], y=day_agg['cum_cpl'],
                     mode='lines+markers',
-                    name=MONTH_NAME.get(m, f"Month {m}"),
+                    name=month_label,
                     line=dict(color=color, width=2),
-                    marker=dict(color=color, size=6)
+                    marker=dict(color=color, size=6),
+                    **hover_kwargs(day_agg['cum_cpl'], month_label, "rupee", 2)
                 ))
 
     cpl_label = "Cost / Lead (Rs)" if not cost_of_sale else f"Cost / Lead (+ {cost_of_sale:g} Cost of Sale) (Rs)"
@@ -444,7 +449,8 @@ def _make_cpl_rv_combined_chart(wa_df, rv_df, months, cost_of_sale=0):
                     name=f"{month_label} — Cost/Lead",
                     line=dict(color=color, width=2, dash='solid'),
                     marker=dict(color=color, size=6, symbol='circle'),
-                    legendgroup=month_label
+                    legendgroup=month_label,
+                    **hover_kwargs(day_agg['cum_cpl'], f"{month_label} Cost/Lead", "rupee", 2)
                 ))
 
         # Dashed line: RV Per Lead
@@ -455,7 +461,8 @@ def _make_cpl_rv_combined_chart(wa_df, rv_df, months, cost_of_sale=0):
                 name=f"{month_label} — RV/Lead",
                 line=dict(color=color, width=2, dash='dash'),
                 marker=dict(color=color, size=7, symbol='diamond'),
-                legendgroup=month_label
+                legendgroup=month_label,
+                **hover_kwargs(rdf['RV_Lead_Rate'], f"{month_label} RV/Lead", "rupee", 2)
             ))
 
     fig.update_layout(
@@ -531,7 +538,8 @@ def _make_meta_cpl_rv_combined_chart(cost_df, rv_df, months, label="FB", cost_of
                     name=f"{month_label} — Cost/Lead",
                     line=dict(color=color, width=2, dash='solid'),
                     marker=dict(color=color, size=6, symbol='circle'),
-                    legendgroup=month_label
+                    legendgroup=month_label,
+                    **hover_kwargs(day_agg['cum_cpl'], f"{month_label} Cost/Lead", "rupee", 2)
                 ))
 
         # Dashed line: RV Per Lead
@@ -542,7 +550,8 @@ def _make_meta_cpl_rv_combined_chart(cost_df, rv_df, months, label="FB", cost_of
                 name=f"{month_label} — RV/Lead",
                 line=dict(color=color, width=2, dash='dash'),
                 marker=dict(color=color, size=7, symbol='diamond'),
-                legendgroup=month_label
+                legendgroup=month_label,
+                **hover_kwargs(rdf['RV_Lead_Rate'], f"{month_label} RV/Lead", "rupee", 2)
             ))
 
     fig.update_layout(
@@ -762,11 +771,10 @@ def _make_combined_com_curve(
                 color=color,
                 size=6
             ),
-            hovertemplate="(%{x}, %{y:.2f}%)<extra></extra>"
+            hovertemplate="%{y:.2f}%<extra>%{x} " + month_label + "</extra>"
         ))
 
     fig.update_layout(
-        title="ALL Marketing Campaign COM",
         xaxis_title="Day of Month",
         yaxis_title="Cost of Marketing (%)",
         legend=dict(

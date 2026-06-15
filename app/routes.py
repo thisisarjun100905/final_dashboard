@@ -713,8 +713,8 @@ def data_dashboard():
     # CHARTS
     # =================================================
     fig_conv = make_timeseries_figure(filtered_conv, months_selected, 'conversion', "Conversion Over Time", "Conversion", value_type="percent")
-    fig_lead = make_timeseries_figure(filtered_lead, months_selected, 'Leads_created_cum', "Leads Over Time", "Leads")
-    fig_app  = make_timeseries_figure(filtered_app, months_selected, 'appointment', "Appointments Over Time", "Appointments")
+    fig_lead = make_timeseries_figure(filtered_lead, months_selected, 'Leads_created_cum', "Leads Over Time", "Leads Count")
+    fig_app  = make_timeseries_figure(filtered_app, months_selected, 'appointment', "Appointments Over Time", "Appointments Count")
     fig_deal = make_timeseries_figure(filtered_conv, months_selected, 'hot_team_leads', "Deals Closed Over Time", "Deals Closed")
     fig_deal1 = make_timeseries_figure(filtered_conv1, months_selected, 'deal_closed', "Deals Closed Over Time (Deal Closed Date)", "Deals Closed")
     fig_rv = make_timeseries_figure(filtered_conv, months_selected, 'rv_3_yr_hot_team', "RV 3 Year Over Time", "RV 3 Year", value_type="rupee")

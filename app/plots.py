@@ -2,6 +2,57 @@ import pandas as pd
 import plotly.graph_objects as go
 
 
+def format_inr(value, decimals: int = 0) -> str:
+    """Format a number using the Indian numbering system.
+
+    e.g. 21288102 -> '2,12,88,102'  (last 3 digits, then groups of 2).
+    `decimals` controls fractional digits (0 for whole rupees).
+    """
+    try:
+        n = float(value)
+    except (TypeError, ValueError):
+        return ""
+    if pd.isna(n):
+        return ""
+    neg = n < 0
+    txt = f"{abs(n):.{decimals}f}"            # full number, rounded — avoids carry bugs
+    if "." in txt:
+        int_str, frac = txt.split(".")
+        frac = "." + frac
+    else:
+        int_str, frac = txt, ""
+    if len(int_str) > 3:
+        last3 = int_str[-3:]
+        rest = int_str[:-3]
+        parts = []
+        while len(rest) > 2:
+            parts.insert(0, rest[-2:])
+            rest = rest[:-2]
+        if rest:
+            parts.insert(0, rest)
+        int_str = ",".join(parts) + "," + last3
+    return ("-" if neg else "") + int_str + frac
+
+
+def hover_kwargs(yvals, label, value_type: str = "number", decimals: int = 0) -> dict:
+    """Build customdata + hovertemplate so hover shows the value in the main box
+    and "<day> <label>" (e.g. "14 Jun") in the colored side box.
+
+      "rupee"   -> Indian-formatted value (via customdata)
+      "percent" -> "%{y:.2f}%"
+      "number"  -> "%{y:,.0f}"
+    """
+    side = "<extra>%{x} " + str(label) + "</extra>"
+    if value_type == "rupee":
+        return dict(
+            customdata=[format_inr(v, decimals) for v in yvals],
+            hovertemplate="%{customdata}" + side,
+        )
+    if value_type == "percent":
+        return dict(hovertemplate="%{y:.2f}%" + side)
+    return dict(hovertemplate="%{y:,.0f}" + side)
+
+
 def make_timeseries_figure(
     df: pd.DataFrame,
     months: list[int],
@@ -58,13 +109,15 @@ def make_timeseries_figure(
             if not mdf.empty:
                 color = color_palette[idx % len(color_palette)]
 
+                month_label = MONTH_NAME.get(m, f"Month {m}")
                 fig.add_trace(go.Scatter(
                     x=mdf['day'] if 'day' in mdf.columns else mdf.index,
                     y=mdf[ycol],
                     mode='lines+markers',
-                    name=MONTH_NAME.get(m, f"Month {m}"),
+                    name=month_label,
                     line=dict(color=color, width=2),
-                    marker=dict(color=color, size=6)
+                    marker=dict(color=color, size=6),
+                    **hover_kwargs(mdf[ycol], month_label, value_type)
                 ))
     else:
         fig.add_trace(go.Scatter(
@@ -73,7 +126,8 @@ def make_timeseries_figure(
             mode='lines+markers',
             name=title,
             line=dict(color=color_palette[0], width=2),
-            marker=dict(color=color_palette[0], size=6)
+            marker=dict(color=color_palette[0], size=6),
+            **hover_kwargs(df[ycol], title, value_type)
         ))
 
     # ---- Hover / axis formatting by value type ----
