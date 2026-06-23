@@ -1,6 +1,26 @@
 import pandas as pd
 import numpy as np
 from typing import List, Optional
+from datetime import datetime, date
+
+
+def _cohort_max_day(month: int, today: Optional[date] = None) -> int:
+    """Days actually elapsed since the 1st of `month` (cohort start), capped at 90.
+
+    The 90-day attempt table holds a full 1..90 window for every cohort, even days
+    that haven't happened yet. A cohort that started this month can only have as many
+    days as have truly passed (e.g. on Jun 18 the June cohort is ~17 days old, not 88).
+    """
+    if today is None:
+        today = datetime.now().date()
+    # Year-wrap: a month later than the current month belongs to the previous year.
+    year = today.year - 1 if month > today.month else today.year
+    try:
+        start = date(year, int(month), 1)
+    except (ValueError, TypeError):
+        return 90
+    elapsed = (today - start).days
+    return max(0, min(90, elapsed))
 
 # ---------------------------
 # Internal helpers
@@ -409,57 +429,54 @@ def filter_attempt_data(
     branches: Optional[List[str]] = None
 ) -> pd.DataFrame:
     """
-    Input columns (flexible):
-      campaign_id, month|month_no, day|no_days, appointment_close|appointments|appointment, branch?
-    Output columns:
-      month, day, appointment_close (sum), appointment (cumulative within month)
+    Columns used: campaign_id, branch, month, day, attempt_count, leads
+    Groups by (month, day), summing attempt_count and leads across campaigns/branches.
     """
     base = _coerce_and_filter(df, campaign_ids, months, branches)
     if base.empty:
-        return pd.DataFrame(columns=["month", "day", "attemp_count"])
+        return pd.DataFrame(columns=["month", "day", "attempt_cum", "leads_cum"])
 
-    app_col = _first_existing_col(base, ["attempt_count"])
-    leads_col = _first_existing_col(base, ["leads"])
-    if app_col is None or not {"month", "day"}.issubset(base.columns):
-        return pd.DataFrame(columns=["month", "day", "attempt_count" , "leads"])
+    if not {"month", "day", "attempt_count", "leads"}.issubset(base.columns):
+        return pd.DataFrame(columns=["month", "day", "attempt_cum", "leads_cum"])
 
-    base[app_col] = _to_float_series(base[app_col]).fillna(0)
-    base[leads_col] = _to_float_series(base[leads_col]).fillna(0)
+    base["attempt_count"] = _to_float_series(base["attempt_count"]).fillna(0)
+    base["leads"] = _to_float_series(base["leads"]).fillna(0)
+
     agg = (
         base.groupby(["month", "day"], as_index=False)
-            .agg(attempt_cum=(app_col, "sum") ,
-                 leads_cum = (leads_col , "sum"))
+            .agg(attempt_cum=("attempt_count", "sum"),
+                 leads_cum=("leads", "sum"))
             .sort_values(["month", "day"])
     )
+
+    # Trim each cohort month to the days that have actually elapsed (max 90).
+    # Stops June extending to day 88 when only ~18 days have passed, etc.
+    if not agg.empty:
+        max_day = agg["month"].map(
+            lambda m: _cohort_max_day(int(m)) if pd.notna(m) else 0
+        )
+        agg = agg[pd.to_numeric(agg["day"], errors="coerce") <= max_day].reset_index(drop=True)
+
     return agg
 
 
 def filter_attempt_rate(df_attempt, col_name):
-
-    # Step 2 — Validate df_attempt required columns
-    if not {"month", "day", "attempt_cum" , "leads_cum"}.issubset(df_attempt.columns):
+    if not {"month", "day", "attempt_cum", "leads_cum"}.issubset(df_attempt.columns):
         return pd.DataFrame(columns=["month", "day", col_name])
 
-    df_attempt_rate = df_attempt
+    df_out = df_attempt.copy()
+    df_out["attempt_cum"] = pd.to_numeric(df_out["attempt_cum"], errors="coerce").fillna(0)
+    df_out["leads_cum"] = pd.to_numeric(df_out["leads_cum"], errors="coerce").fillna(0)
 
-    # Step 5 — Convert numeric fields safely
-    df_attempt_rate["attempt_cum"] = pd.to_numeric(df_attempt_rate["attempt_cum"], errors="coerce").fillna(0)
-    df_attempt_rate["leads_cum"] = pd.to_numeric(df_attempt_rate["leads_cum"], errors="coerce").fillna(0)
-
-    # Step 6 — Handle denominator zero to avoid division-by-zero
-    den = df_attempt_rate["leads_cum"].replace(0, np.nan)
-
-    # Step 7 — Calculate attempt rate
-    df_attempt_rate[col_name] = pd.Series(np.where(
-        df_attempt_rate["attempt_cum"] > den,
+    den = df_out["leads_cum"].replace(0, np.nan)
+    df_out[col_name] = np.where(
+        df_out["attempt_cum"] > df_out["leads_cum"],
         0,
-        (df_attempt_rate["attempt_cum"] / den) * 100
-    ), index=df_attempt_rate.index).round(2).fillna(0)
+        (df_out["attempt_cum"] / den * 100)
+    )
+    df_out[col_name] = pd.to_numeric(df_out[col_name], errors="coerce").round(2).fillna(0)
 
-    # Step 8 — Final cleanup: replace NaN with 0
-    df_attempt_rate[col_name] = df_attempt_rate[col_name].fillna(0)
-
-    return df_attempt_rate
+    return df_out
 
 
 # RV to Leads Rate = (rv_3_year_hot_team / unique_leads) * 100
@@ -663,7 +680,7 @@ def filter_connectivity(
     agg["conn_per"] = pd.Series(np.where(
         agg["conn_cum"] > agg["leads_cum"],
         0,
-        (agg["conn_cum"] / agg["leads_cum"].replace(0, pd.NA)) * 100
+        (agg["conn_cum"] / agg["leads_cum"].replace(0, np.nan)) * 100
     ), index=agg.index).round(2).fillna(0)
 
     return agg

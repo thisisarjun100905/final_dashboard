@@ -70,11 +70,12 @@ def _fetch_from_db():
         'dashboard_internal_appointment',
         'dashboard_internal_nib_data',
         'dashboard_internal_ni_data',
-        'dashboard_internal_new_attempt_logic_data',
-        'dashboard_internal_new_connectivity_logic_data',
+        'dashboard_internal_new_attempt_logic_data_test',
+        # '90_days_extend_attempt',
+        'dashboard_internal_new_connectivity_logic_data_test',
         'dashboard_internal_tme_experience',
         'dashboard_internal_bad_disposition',
-        'dashboard_internal_call_scheduling_data'
+        'dashboard_internal_call_scheduling_data_test'
     ]
     TABLE_KEY_MAPPING = {
         "dashboard_internal_conversion": "conversion",
@@ -83,11 +84,12 @@ def _fetch_from_db():
         "dashboard_internal_appointment": "appointment",
         "dashboard_internal_nib_data": "nib",
         "dashboard_internal_ni_data": "ni",
-        'dashboard_internal_new_attempt_logic_data': "attempt",
-        "dashboard_internal_new_connectivity_logic_data": "connectivity",
+        'dashboard_internal_new_attempt_logic_data_test': "attempt",
+        #  "90_days_extend_attempt" : "attempt",
+        "dashboard_internal_new_connectivity_logic_data_test": "connectivity",
         "dashboard_internal_tme_experience": "tme_experience",
         "dashboard_internal_bad_disposition": "bad_dispo",
-        "dashboard_internal_call_scheduling_data": "call_scheduling"
+        "dashboard_internal_call_scheduling_data_test": "call_scheduling"
     }
     data = fetch_tables_as_dict(tables, table_key_mapping=TABLE_KEY_MAPPING)
 
